@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import {
   Users,
-  Package,
+  DollarSign,
+  FileText,
   Loader2,
   AlertCircle,
   Search,
+  ArrowUpDown,
 } from "lucide-react";
 import { getList, getCount } from "../lib/erpnext";
 
@@ -12,12 +14,15 @@ import { getList, getCount } from "../lib/erpnext";
 // Tipos
 // ---------------------------------------------------------------------------
 
-interface Customer {
+interface SalesInvoice {
   name: string;
   customer_name: string;
-  tax_id: string;
-  customer_type: string;
-  territory: string;
+  grand_total: number;
+  outstanding_amount: number;
+  due_date: string;
+  posting_date: string;
+  custom_nomus_id: string;
+  custom_nfe_origem: string;
 }
 
 interface KPIData {
@@ -29,7 +34,34 @@ interface KPIData {
 }
 
 // ---------------------------------------------------------------------------
-// KPI Card (mesmo padrão do Dashboard)
+// Helpers
+// ---------------------------------------------------------------------------
+
+function formatBRL(value: number): string {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function formatDate(dateStr: string): string {
+  if (!dateStr) return "—";
+  const [y, m, d] = dateStr.split("-");
+  return `${d}/${m}/${y}`;
+}
+
+function daysOverdue(dueDate: string): number {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(dueDate + "T00:00:00");
+  const diff = Math.floor((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
+  return diff;
+}
+
+// ---------------------------------------------------------------------------
+// KPI Card
 // ---------------------------------------------------------------------------
 
 function KPICard({ data }: { data: KPIData }) {
@@ -67,10 +99,6 @@ function KPICardSkeleton() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Tabela Skeleton
-// ---------------------------------------------------------------------------
-
 function TableSkeleton() {
   return (
     <div className="bg-card rounded-xl border border-border overflow-hidden animate-pulse">
@@ -78,12 +106,12 @@ function TableSkeleton() {
         <div className="h-5 w-40 bg-border rounded" />
       </div>
       <div className="divide-y divide-border">
-        {Array.from({ length: 5 }).map((_, i) => (
+        {Array.from({ length: 8 }).map((_, i) => (
           <div key={i} className="flex gap-4 p-4">
-            <div className="h-4 w-1/3 bg-border rounded" />
             <div className="h-4 w-1/4 bg-border rounded" />
+            <div className="h-4 w-1/3 bg-border rounded" />
             <div className="h-4 w-1/6 bg-border rounded" />
-            <div className="h-4 w-1/12 bg-border rounded" />
+            <div className="h-4 w-1/6 bg-border rounded" />
           </div>
         ))}
       </div>
@@ -95,12 +123,16 @@ function TableSkeleton() {
 // Vendas Page
 // ---------------------------------------------------------------------------
 
+type SortField = "customer_name" | "outstanding_amount" | "due_date";
+
 export default function Vendas() {
   const [kpis, setKpis] = useState<KPIData[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [invoices, setInvoices] = useState<SalesInvoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [sortField, setSortField] = useState<SortField>("due_date");
+  const [sortAsc, setSortAsc] = useState(true);
 
   useEffect(() => {
     async function fetchData() {
@@ -108,41 +140,67 @@ export default function Vendas() {
       setError(null);
 
       try {
-        const [totalCustomers, totalItems, customerList] = await Promise.all([
-          getCount("Customer").catch(() => 0),
-          getCount("Item").catch(() => 0),
-          getList<Customer>({
-            doctype: "Customer",
+        const [totalCustomers, invoiceList] = await Promise.all([
+          getCount("Customer", [["disabled", "=", 0]]).catch(() => 0),
+          getList<SalesInvoice>({
+            doctype: "Sales Invoice",
             fields: [
               "name",
               "customer_name",
-              "tax_id",
-              "customer_type",
-              "territory",
+              "grand_total",
+              "outstanding_amount",
+              "due_date",
+              "posting_date",
+              "custom_nomus_id",
+              "custom_nfe_origem",
             ],
-            orderBy: "customer_name asc",
-            limitPageLength: 20,
-          }).catch(() => [] as Customer[]),
+            filters: [
+              ["docstatus", "=", 1],
+              ["outstanding_amount", ">", 0],
+            ],
+            orderBy: "due_date asc",
+            limitPageLength: 0,
+          }).catch(() => [] as SalesInvoice[]),
         ]);
+
+        const totalOutstanding = invoiceList.reduce(
+          (sum, inv) => sum + (inv.outstanding_amount || 0),
+          0
+        );
+
+        const overdueCount = invoiceList.filter(
+          (inv) => daysOverdue(inv.due_date) > 0
+        ).length;
+
+        const overdueAmount = invoiceList
+          .filter((inv) => daysOverdue(inv.due_date) > 0)
+          .reduce((sum, inv) => sum + (inv.outstanding_amount || 0), 0);
 
         setKpis([
           {
-            label: "Total de Clientes",
-            value: String(totalCustomers),
+            label: "Clientes Ativos",
+            value: new Intl.NumberFormat("pt-BR").format(totalCustomers),
             subtitle: "Cadastrados no ERPNext2",
             icon: <Users size={22} />,
             color: "#3B82F6",
           },
           {
-            label: "Total de Itens",
-            value: String(totalItems),
-            subtitle: "Produtos cadastrados",
-            icon: <Package size={22} />,
+            label: "Total a Receber",
+            value: formatBRL(totalOutstanding),
+            subtitle: `${invoiceList.length} títulos em aberto`,
+            icon: <DollarSign size={22} />,
             color: "#10B981",
+          },
+          {
+            label: "Vencidas",
+            value: formatBRL(overdueAmount),
+            subtitle: `${overdueCount} títulos vencidos`,
+            icon: <FileText size={22} />,
+            color: "#EF4444",
           },
         ]);
 
-        setCustomers(customerList);
+        setInvoices(invoiceList);
       } catch (err) {
         console.error("[Vendas] Erro ao buscar dados:", err);
         setError(
@@ -156,28 +214,31 @@ export default function Vendas() {
     fetchData();
   }, []);
 
-  const filtered = customers.filter(
-    (c) =>
-      c.customer_name?.toLowerCase().includes(search.toLowerCase()) ||
-      c.tax_id?.includes(search)
+  const filtered = invoices.filter(
+    (inv) =>
+      inv.customer_name?.toLowerCase().includes(search.toLowerCase()) ||
+      inv.name?.toLowerCase().includes(search.toLowerCase()) ||
+      inv.custom_nomus_id?.includes(search)
   );
 
-  function formatCNPJ(value: string | null): string {
-    if (!value) return "—";
-    const digits = value.replace(/\D/g, "");
-    if (digits.length === 14) {
-      return digits.replace(
-        /^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,
-        "$1.$2.$3/$4-$5"
-      );
+  const sorted = [...filtered].sort((a, b) => {
+    if (sortField === "outstanding_amount") {
+      return sortAsc
+        ? a.outstanding_amount - b.outstanding_amount
+        : b.outstanding_amount - a.outstanding_amount;
     }
-    if (digits.length === 11) {
-      return digits.replace(
-        /^(\d{3})(\d{3})(\d{3})(\d{2})$/,
-        "$1.$2.$3-$4"
-      );
+    const aVal = (a[sortField] ?? "").toString().toLowerCase();
+    const bVal = (b[sortField] ?? "").toString().toLowerCase();
+    return sortAsc ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+  });
+
+  function handleSort(field: SortField) {
+    if (sortField === field) {
+      setSortAsc(!sortAsc);
+    } else {
+      setSortField(field);
+      setSortAsc(true);
     }
-    return value;
   }
 
   return (
@@ -186,7 +247,7 @@ export default function Vendas() {
       <div>
         <h1 className="text-2xl font-bold text-text-primary">Vendas</h1>
         <p className="text-sm text-text-secondary mt-1">
-          Clientes cadastrados e indicadores comerciais
+          Contas a receber e indicadores comerciais
         </p>
       </div>
 
@@ -203,27 +264,27 @@ export default function Vendas() {
 
       {/* KPIs */}
       {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <KPICardSkeleton />
           <KPICardSkeleton />
           <KPICardSkeleton />
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {kpis.map((kpi) => (
             <KPICard key={kpi.label} data={kpi} />
           ))}
         </div>
       )}
 
-      {/* Tabela de Clientes */}
+      {/* Tabela de Sales Invoices */}
       {loading ? (
         <TableSkeleton />
       ) : (
         <div className="bg-card rounded-xl border border-border overflow-hidden shadow-sm">
-          {/* Table header */}
           <div className="flex items-center justify-between p-4 border-b border-border">
             <h3 className="text-sm font-semibold text-text-primary">
-              Clientes ({filtered.length})
+              Sales Invoices em Aberto ({sorted.length})
             </h3>
             <div className="relative">
               <Search
@@ -232,74 +293,117 @@ export default function Vendas() {
               />
               <input
                 type="text"
-                placeholder="Buscar por nome ou CNPJ..."
+                placeholder="Buscar por cliente, fatura ou Nomus ID..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="pl-8 pr-3 py-1.5 text-xs border border-border rounded-lg bg-surface text-text-primary placeholder:text-text-secondary focus:outline-none focus:ring-1 focus:ring-primary w-56"
+                className="pl-8 pr-3 py-1.5 text-xs border border-border rounded-lg bg-surface text-text-primary placeholder:text-text-secondary focus:outline-none focus:ring-1 focus:ring-primary w-72"
               />
             </div>
           </div>
 
-          {/* Table */}
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-surface text-text-secondary text-xs uppercase tracking-wider">
-                  <th className="text-left px-4 py-3 font-medium">Razão Social</th>
-                  <th className="text-left px-4 py-3 font-medium">CNPJ/CPF</th>
-                  <th className="text-left px-4 py-3 font-medium">Tipo</th>
-                  <th className="text-left px-4 py-3 font-medium">Território</th>
+                  <th className="text-left px-4 py-3 font-medium">Fatura</th>
+                  <th
+                    className="text-left px-4 py-3 font-medium cursor-pointer hover:text-text-primary select-none"
+                    onClick={() => handleSort("customer_name")}
+                  >
+                    <span className="flex items-center gap-1">
+                      Cliente
+                      <ArrowUpDown size={12} className="opacity-50" />
+                    </span>
+                  </th>
+                  <th
+                    className="text-right px-4 py-3 font-medium cursor-pointer hover:text-text-primary select-none"
+                    onClick={() => handleSort("outstanding_amount")}
+                  >
+                    <span className="flex items-center justify-end gap-1">
+                      Valor em Aberto
+                      <ArrowUpDown size={12} className="opacity-50" />
+                    </span>
+                  </th>
+                  <th
+                    className="text-left px-4 py-3 font-medium cursor-pointer hover:text-text-primary select-none"
+                    onClick={() => handleSort("due_date")}
+                  >
+                    <span className="flex items-center gap-1">
+                      Vencimento
+                      <ArrowUpDown size={12} className="opacity-50" />
+                    </span>
+                  </th>
+                  <th className="text-left px-4 py-3 font-medium">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {filtered.map((c) => (
-                  <tr
-                    key={c.name}
-                    className="hover:bg-surface/50 transition-colors"
-                  >
-                    <td className="px-4 py-3 text-text-primary font-medium max-w-xs truncate">
-                      {c.customer_name}
-                    </td>
-                    <td className="px-4 py-3 text-text-secondary font-mono text-xs">
-                      {formatCNPJ(c.tax_id)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                          c.customer_type === "Company"
-                            ? "bg-info/10 text-info"
-                            : "bg-warning/10 text-warning"
-                        }`}
-                      >
-                        {c.customer_type === "Company" ? "PJ" : "PF"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-text-secondary">
-                      {c.territory || "—"}
-                    </td>
-                  </tr>
-                ))}
-                {filtered.length === 0 && (
+                {sorted.slice(0, 100).map((inv) => {
+                  const days = daysOverdue(inv.due_date);
+                  const isOverdue = days > 0;
+                  return (
+                    <tr
+                      key={inv.name}
+                      className="hover:bg-surface/50 transition-colors"
+                    >
+                      <td className="px-4 py-3">
+                        <div className="text-text-primary font-mono text-xs font-medium">
+                          {inv.name}
+                        </div>
+                        {inv.custom_nomus_id && (
+                          <div className="text-text-secondary text-[10px] mt-0.5">
+                            Nomus: {inv.custom_nomus_id}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-text-primary max-w-xs truncate">
+                        {inv.customer_name}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-text-primary">
+                        {formatBRL(inv.outstanding_amount)}
+                      </td>
+                      <td className="px-4 py-3 text-text-secondary text-xs">
+                        {formatDate(inv.due_date)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                            isOverdue
+                              ? "bg-danger/10 text-danger"
+                              : "bg-success/10 text-success"
+                          }`}
+                        >
+                          {isOverdue ? `${days}d atraso` : "A vencer"}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {sorted.length === 0 && (
                   <tr>
                     <td
-                      colSpan={4}
+                      colSpan={5}
                       className="px-4 py-8 text-center text-text-secondary text-sm"
                     >
-                      Nenhum cliente encontrado
+                      Nenhuma fatura encontrada
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
+
+          {sorted.length > 100 && (
+            <div className="px-4 py-3 border-t border-border text-xs text-text-secondary text-center">
+              Exibindo 100 de {sorted.length} faturas. Use a busca para filtrar.
+            </div>
+          )}
         </div>
       )}
 
-      {/* Loading */}
       {loading && (
         <div className="flex items-center justify-center gap-2 text-text-secondary text-sm py-4">
           <Loader2 size={16} className="animate-spin" />
-          <span>Buscando clientes do ERPNext2...</span>
+          <span>Buscando dados do ERPNext2...</span>
         </div>
       )}
     </div>

@@ -1,26 +1,194 @@
 import { useEffect, useState } from "react";
 import {
-  Package,
+  BarChart3,
+  DollarSign,
+  CreditCard,
   Loader2,
   AlertCircle,
-  Search,
-  ArrowUpDown,
 } from "lucide-react";
-import { getList, getCount } from "../lib/erpnext";
+import { getList } from "../lib/erpnext";
 
 // ---------------------------------------------------------------------------
 // Tipos
 // ---------------------------------------------------------------------------
 
-interface Item {
+interface Invoice {
   name: string;
-  item_code: string;
-  item_name: string;
-  stock_uom: string;
-  customs_tariff_number: string;
-  item_group: string;
-  disabled: number;
+  outstanding_amount: number;
+  due_date: string;
 }
+
+interface AgingBucket {
+  label: string;
+  count: number;
+  amount: number;
+  color: string;
+  bgColor: string;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function formatBRL(value: number): string {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+function daysOverdue(dueDate: string): number {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(dueDate + "T00:00:00");
+  return Math.floor((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function computeAging(invoices: Invoice[]): AgingBucket[] {
+  const buckets: AgingBucket[] = [
+    { label: "A vencer", count: 0, amount: 0, color: "#10B981", bgColor: "bg-emerald-500" },
+    { label: "1-30 dias", count: 0, amount: 0, color: "#F59E0B", bgColor: "bg-amber-500" },
+    { label: "31-60 dias", count: 0, amount: 0, color: "#F97316", bgColor: "bg-orange-500" },
+    { label: "61-90 dias", count: 0, amount: 0, color: "#EF4444", bgColor: "bg-red-500" },
+    { label: "90+ dias", count: 0, amount: 0, color: "#991B1B", bgColor: "bg-red-800" },
+  ];
+
+  for (const inv of invoices) {
+    const days = daysOverdue(inv.due_date);
+    let idx = 0;
+    if (days <= 0) idx = 0;
+    else if (days <= 30) idx = 1;
+    else if (days <= 60) idx = 2;
+    else if (days <= 90) idx = 3;
+    else idx = 4;
+
+    buckets[idx].count += 1;
+    buckets[idx].amount += inv.outstanding_amount || 0;
+  }
+
+  return buckets;
+}
+
+// ---------------------------------------------------------------------------
+// Aging Bar
+// ---------------------------------------------------------------------------
+
+function AgingBar({ buckets, total }: { buckets: AgingBucket[]; total: number }) {
+  if (total === 0) return null;
+
+  return (
+    <div className="space-y-3">
+      {/* Stacked bar */}
+      <div className="flex h-8 rounded-lg overflow-hidden">
+        {buckets.map((b) => {
+          const pct = total > 0 ? (b.amount / total) * 100 : 0;
+          if (pct === 0) return null;
+          return (
+            <div
+              key={b.label}
+              className={`${b.bgColor} relative group transition-all`}
+              style={{ width: `${pct}%`, minWidth: pct > 0 ? "2px" : "0" }}
+              title={`${b.label}: ${formatBRL(b.amount)} (${pct.toFixed(1)}%)`}
+            >
+              {pct > 8 && (
+                <span className="absolute inset-0 flex items-center justify-center text-white text-[10px] font-semibold">
+                  {pct.toFixed(0)}%
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Legend */}
+      <div className="flex flex-wrap gap-4">
+        {buckets.map((b) => (
+          <div key={b.label} className="flex items-center gap-2">
+            <div
+              className="w-3 h-3 rounded-sm"
+              style={{ backgroundColor: b.color }}
+            />
+            <div className="text-xs">
+              <span className="text-text-secondary">{b.label}:</span>{" "}
+              <span className="text-text-primary font-medium">
+                {b.count} ({formatBRL(b.amount)})
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Aging Table
+// ---------------------------------------------------------------------------
+
+function AgingTable({ buckets, total, title }: { buckets: AgingBucket[]; total: number; title: string }) {
+  return (
+    <div className="bg-card rounded-xl border border-border overflow-hidden shadow-sm">
+      <div className="p-4 border-b border-border">
+        <h3 className="text-sm font-semibold text-text-primary">{title}</h3>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-surface text-text-secondary text-xs uppercase tracking-wider">
+              <th className="text-left px-4 py-3 font-medium">Faixa</th>
+              <th className="text-right px-4 py-3 font-medium">Títulos</th>
+              <th className="text-right px-4 py-3 font-medium">Valor</th>
+              <th className="text-right px-4 py-3 font-medium">% do Total</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {buckets.map((b) => (
+              <tr key={b.label} className="hover:bg-surface/50 transition-colors">
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="w-3 h-3 rounded-sm shrink-0"
+                      style={{ backgroundColor: b.color }}
+                    />
+                    <span className="text-text-primary font-medium">{b.label}</span>
+                  </div>
+                </td>
+                <td className="px-4 py-3 text-right text-text-primary font-mono">
+                  {b.count}
+                </td>
+                <td className="px-4 py-3 text-right text-text-primary font-mono">
+                  {formatBRL(b.amount)}
+                </td>
+                <td className="px-4 py-3 text-right text-text-secondary font-mono">
+                  {total > 0 ? ((b.amount / total) * 100).toFixed(1) : "0.0"}%
+                </td>
+              </tr>
+            ))}
+            {/* Total row */}
+            <tr className="bg-surface font-semibold">
+              <td className="px-4 py-3 text-text-primary">Total</td>
+              <td className="px-4 py-3 text-right text-text-primary font-mono">
+                {buckets.reduce((s, b) => s + b.count, 0)}
+              </td>
+              <td className="px-4 py-3 text-right text-text-primary font-mono">
+                {formatBRL(total)}
+              </td>
+              <td className="px-4 py-3 text-right text-text-primary font-mono">
+                100%
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// KPI Card
+// ---------------------------------------------------------------------------
 
 interface KPIData {
   label: string;
@@ -29,10 +197,6 @@ interface KPIData {
   icon: React.ReactNode;
   color: string;
 }
-
-// ---------------------------------------------------------------------------
-// KPI Card
-// ---------------------------------------------------------------------------
 
 function KPICard({ data }: { data: KPIData }) {
   return (
@@ -69,40 +233,18 @@ function KPICardSkeleton() {
   );
 }
 
-function TableSkeleton() {
-  return (
-    <div className="bg-card rounded-xl border border-border overflow-hidden animate-pulse">
-      <div className="p-4 border-b border-border">
-        <div className="h-5 w-40 bg-border rounded" />
-      </div>
-      <div className="divide-y divide-border">
-        {Array.from({ length: 8 }).map((_, i) => (
-          <div key={i} className="flex gap-4 p-4">
-            <div className="h-4 w-1/6 bg-border rounded" />
-            <div className="h-4 w-1/3 bg-border rounded" />
-            <div className="h-4 w-1/12 bg-border rounded" />
-            <div className="h-4 w-1/6 bg-border rounded" />
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Relatórios Page
 // ---------------------------------------------------------------------------
 
-type SortField = "item_code" | "item_name" | "stock_uom" | "customs_tariff_number";
-
 export default function Relatorios() {
-  const [kpis, setKpis] = useState<KPIData[]>([]);
-  const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
-  const [sortField, setSortField] = useState<SortField>("item_code");
-  const [sortAsc, setSortAsc] = useState(true);
+  const [crBuckets, setCrBuckets] = useState<AgingBucket[]>([]);
+  const [cpBuckets, setCpBuckets] = useState<AgingBucket[]>([]);
+  const [crTotal, setCrTotal] = useState(0);
+  const [cpTotal, setCpTotal] = useState(0);
+  const [kpis, setKpis] = useState<KPIData[]>([]);
 
   useEffect(() => {
     async function fetchData() {
@@ -110,43 +252,71 @@ export default function Relatorios() {
       setError(null);
 
       try {
-        const [totalItems, totalActive, itemList] = await Promise.all([
-          getCount("Item").catch(() => 0),
-          getCount("Item", [["disabled", "=", 0]]).catch(() => 0),
-          getList<Item>({
-            doctype: "Item",
-            fields: [
-              "name",
-              "item_code",
-              "item_name",
-              "stock_uom",
-              "customs_tariff_number",
-              "item_group",
-              "disabled",
+        const [siList, piList] = await Promise.all([
+          getList<Invoice>({
+            doctype: "Sales Invoice",
+            fields: ["name", "outstanding_amount", "due_date"],
+            filters: [
+              ["docstatus", "=", 1],
+              ["outstanding_amount", ">", 0],
             ],
-            orderBy: "item_code asc",
-            limitPageLength: 50,
-          }).catch(() => [] as Item[]),
+            limitPageLength: 0,
+          }).catch(() => [] as Invoice[]),
+          getList<Invoice>({
+            doctype: "Purchase Invoice",
+            fields: ["name", "outstanding_amount", "due_date"],
+            filters: [
+              ["docstatus", "=", 1],
+              ["outstanding_amount", ">", 0],
+            ],
+            limitPageLength: 0,
+          }).catch(() => [] as Invoice[]),
         ]);
+
+        const crAging = computeAging(siList);
+        const cpAging = computeAging(piList);
+
+        const crTotalAmt = crAging.reduce((s, b) => s + b.amount, 0);
+        const cpTotalAmt = cpAging.reduce((s, b) => s + b.amount, 0);
+
+        setCrBuckets(crAging);
+        setCpBuckets(cpAging);
+        setCrTotal(crTotalAmt);
+        setCpTotal(cpTotalAmt);
+
+        const crOverdue = crAging.slice(1).reduce((s, b) => s + b.amount, 0);
+        const cpOverdue = cpAging.slice(1).reduce((s, b) => s + b.amount, 0);
 
         setKpis([
           {
-            label: "Total de Itens",
-            value: String(totalItems),
-            subtitle: "Cadastrados no ERPNext2",
-            icon: <Package size={22} />,
+            label: "Total a Receber",
+            value: formatBRL(crTotalAmt),
+            subtitle: `${siList.length} títulos em aberto`,
+            icon: <DollarSign size={22} />,
             color: "#10B981",
           },
           {
-            label: "Itens Ativos",
-            value: String(totalActive),
-            subtitle: `${totalItems - totalActive} inativos`,
-            icon: <Package size={22} />,
-            color: "#3B82F6",
+            label: "CR Vencidas",
+            value: formatBRL(crOverdue),
+            subtitle: `${crAging.slice(1).reduce((s, b) => s + b.count, 0)} títulos`,
+            icon: <BarChart3 size={22} />,
+            color: "#EF4444",
+          },
+          {
+            label: "Total a Pagar",
+            value: formatBRL(cpTotalAmt),
+            subtitle: `${piList.length} títulos em aberto`,
+            icon: <CreditCard size={22} />,
+            color: "#F59E0B",
+          },
+          {
+            label: "CP Vencidas",
+            value: formatBRL(cpOverdue),
+            subtitle: `${cpAging.slice(1).reduce((s, b) => s + b.count, 0)} títulos`,
+            icon: <BarChart3 size={22} />,
+            color: "#991B1B",
           },
         ]);
-
-        setItems(itemList);
       } catch (err) {
         console.error("[Relatórios] Erro ao buscar dados:", err);
         setError(
@@ -160,47 +330,13 @@ export default function Relatorios() {
     fetchData();
   }, []);
 
-  const filtered = items.filter(
-    (item) =>
-      item.item_code?.toLowerCase().includes(search.toLowerCase()) ||
-      item.item_name?.toLowerCase().includes(search.toLowerCase()) ||
-      item.customs_tariff_number?.includes(search)
-  );
-
-  const sorted = [...filtered].sort((a, b) => {
-    const aVal = (a[sortField] ?? "").toString().toLowerCase();
-    const bVal = (b[sortField] ?? "").toString().toLowerCase();
-    return sortAsc ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
-  });
-
-  function handleSort(field: SortField) {
-    if (sortField === field) {
-      setSortAsc(!sortAsc);
-    } else {
-      setSortField(field);
-      setSortAsc(true);
-    }
-  }
-
-  function formatNCM(value: string | null): string {
-    if (!value) return "—";
-    const digits = value.replace(/\D/g, "");
-    if (digits.length === 8) {
-      return digits.replace(
-        /^(\d{4})(\d{2})(\d{2})$/,
-        "$1.$2.$3"
-      );
-    }
-    return value;
-  }
-
   return (
     <div className="space-y-6">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-text-primary">Relatórios</h1>
         <p className="text-sm text-text-secondary mt-1">
-          Catálogo de itens e produtos cadastrados
+          Aging Analysis — Contas a Receber e Contas a Pagar
         </p>
       </div>
 
@@ -217,139 +353,53 @@ export default function Relatorios() {
 
       {/* KPIs */}
       {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <KPICardSkeleton />
-          <KPICardSkeleton />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <KPICardSkeleton key={i} />
+          ))}
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {kpis.map((kpi) => (
             <KPICard key={kpi.label} data={kpi} />
           ))}
         </div>
       )}
 
-      {/* Tabela de Itens */}
       {loading ? (
-        <TableSkeleton />
-      ) : (
-        <div className="bg-card rounded-xl border border-border overflow-hidden shadow-sm">
-          {/* Table header */}
-          <div className="flex items-center justify-between p-4 border-b border-border">
-            <h3 className="text-sm font-semibold text-text-primary">
-              Itens Cadastrados ({sorted.length})
-            </h3>
-            <div className="relative">
-              <Search
-                size={14}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary"
-              />
-              <input
-                type="text"
-                placeholder="Buscar por código, nome ou NCM..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-8 pr-3 py-1.5 text-xs border border-border rounded-lg bg-surface text-text-primary placeholder:text-text-secondary focus:outline-none focus:ring-1 focus:ring-primary w-64"
-              />
-            </div>
-          </div>
-
-          {/* Table */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-surface text-text-secondary text-xs uppercase tracking-wider">
-                  <th
-                    className="text-left px-4 py-3 font-medium cursor-pointer hover:text-text-primary select-none"
-                    onClick={() => handleSort("item_code")}
-                  >
-                    <span className="flex items-center gap-1">
-                      Código
-                      <ArrowUpDown size={12} className="opacity-50" />
-                    </span>
-                  </th>
-                  <th
-                    className="text-left px-4 py-3 font-medium cursor-pointer hover:text-text-primary select-none"
-                    onClick={() => handleSort("item_name")}
-                  >
-                    <span className="flex items-center gap-1">
-                      Nome
-                      <ArrowUpDown size={12} className="opacity-50" />
-                    </span>
-                  </th>
-                  <th
-                    className="text-left px-4 py-3 font-medium cursor-pointer hover:text-text-primary select-none"
-                    onClick={() => handleSort("stock_uom")}
-                  >
-                    <span className="flex items-center gap-1">
-                      UOM
-                      <ArrowUpDown size={12} className="opacity-50" />
-                    </span>
-                  </th>
-                  <th
-                    className="text-left px-4 py-3 font-medium cursor-pointer hover:text-text-primary select-none"
-                    onClick={() => handleSort("customs_tariff_number")}
-                  >
-                    <span className="flex items-center gap-1">
-                      NCM
-                      <ArrowUpDown size={12} className="opacity-50" />
-                    </span>
-                  </th>
-                  <th className="text-left px-4 py-3 font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {sorted.map((item) => (
-                  <tr
-                    key={item.name}
-                    className="hover:bg-surface/50 transition-colors"
-                  >
-                    <td className="px-4 py-3 text-text-primary font-mono text-xs font-medium">
-                      {item.item_code}
-                    </td>
-                    <td className="px-4 py-3 text-text-primary max-w-sm truncate">
-                      {item.item_name}
-                    </td>
-                    <td className="px-4 py-3 text-text-secondary">
-                      {item.stock_uom}
-                    </td>
-                    <td className="px-4 py-3 text-text-secondary font-mono text-xs">
-                      {formatNCM(item.customs_tariff_number)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                          item.disabled === 0
-                            ? "bg-success/10 text-success"
-                            : "bg-danger/10 text-danger"
-                        }`}
-                      >
-                        {item.disabled === 0 ? "Ativo" : "Inativo"}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-                {sorted.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={5}
-                      className="px-4 py-8 text-center text-text-secondary text-sm"
-                    >
-                      Nenhum item encontrado
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Loading */}
-      {loading && (
-        <div className="flex items-center justify-center gap-2 text-text-secondary text-sm py-4">
+        <div className="flex items-center justify-center gap-2 text-text-secondary text-sm py-8">
           <Loader2 size={16} className="animate-spin" />
-          <span>Buscando itens do ERPNext2...</span>
+          <span>Calculando aging analysis...</span>
+        </div>
+      ) : (
+        <div className="space-y-8">
+          {/* Contas a Receber */}
+          <div className="space-y-4">
+            <h2 className="text-lg font-semibold text-text-primary flex items-center gap-2">
+              <DollarSign size={20} className="text-emerald-500" />
+              Contas a Receber — Aging Analysis
+            </h2>
+            <AgingBar buckets={crBuckets} total={crTotal} />
+            <AgingTable
+              buckets={crBuckets}
+              total={crTotal}
+              title="Detalhamento por Faixa de Atraso — Contas a Receber"
+            />
+          </div>
+
+          {/* Contas a Pagar */}
+          <div className="space-y-4">
+            <h2 className="text-lg font-semibold text-text-primary flex items-center gap-2">
+              <CreditCard size={20} className="text-amber-500" />
+              Contas a Pagar — Aging Analysis
+            </h2>
+            <AgingBar buckets={cpBuckets} total={cpTotal} />
+            <AgingTable
+              buckets={cpBuckets}
+              total={cpTotal}
+              title="Detalhamento por Faixa de Atraso — Contas a Pagar"
+            />
+          </div>
         </div>
       )}
     </div>

@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import {
-  DollarSign,
+  Users,
+  Truck,
   FileText,
-  ShoppingBag,
+  DollarSign,
   CreditCard,
+  ShoppingBag,
   TrendingUp,
   TrendingDown,
   Loader2,
@@ -22,7 +24,6 @@ interface KPIData {
   subtitle: string;
   icon: React.ReactNode;
   trend?: "up" | "down" | "neutral";
-  trendValue?: string;
   color: string;
 }
 
@@ -39,15 +40,8 @@ function formatBRL(value: number): string {
   }).format(value);
 }
 
-function getMonthRange(): { start: string; end: string } {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const lastDay = new Date(year, now.getMonth() + 1, 0).getDate();
-  return {
-    start: `${year}-${month}-01`,
-    end: `${year}-${month}-${lastDay}`,
-  };
+function formatNumber(value: number): string {
+  return new Intl.NumberFormat("pt-BR").format(value);
 }
 
 // ---------------------------------------------------------------------------
@@ -82,10 +76,6 @@ function KPICard({ data }: { data: KPIData }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Componente Skeleton
-// ---------------------------------------------------------------------------
-
 function KPICardSkeleton() {
   return (
     <div className="bg-card rounded-xl border border-border p-5 animate-pulse">
@@ -116,87 +106,105 @@ export default function Dashboard() {
       setError(null);
 
       try {
-        const { start, end } = getMonthRange();
-
-        const dateFilter: ERPFilter[] = [
-          ["posting_date", ">=", start],
-          ["posting_date", "<=", end],
+        const openSIFilters: ERPFilter[] = [
           ["docstatus", "=", 1],
+          ["outstanding_amount", ">", 0],
         ];
 
-        // Buscar dados em paralelo
-        const [invoices, nfCount, openOrders, receivables] = await Promise.all([
-          // 1. Faturamento do mês — soma de Sales Invoice
-          getList<{ grand_total: number }>({
+        const openPIFilters: ERPFilter[] = [
+          ["docstatus", "=", 1],
+          ["outstanding_amount", ">", 0],
+        ];
+
+        const [
+          activeCustomers,
+          activeSuppliers,
+          openSICount,
+          openSIList,
+          openPICount,
+          openPIList,
+          openOrders,
+        ] = await Promise.all([
+          getCount("Customer", [["disabled", "=", 0]]).catch(() => 0),
+          getCount("Supplier", [["disabled", "=", 0]]).catch(() => 0),
+          getCount("Sales Invoice", openSIFilters).catch(() => 0),
+          getList<{ outstanding_amount: number }>({
             doctype: "Sales Invoice",
-            fields: ["grand_total"],
-            filters: dateFilter,
+            fields: ["outstanding_amount"],
+            filters: openSIFilters,
             limitPageLength: 0,
-          }).catch(() => [] as { grand_total: number }[]),
-
-          // 2. NFs emitidas no mês
-          getCount("Sales Invoice", dateFilter).catch(() => 0),
-
-          // 3. Pedidos abertos (Sales Order com status != Completed/Cancelled)
+          }).catch(() => [] as { outstanding_amount: number }[]),
+          getCount("Purchase Invoice", openPIFilters).catch(() => 0),
+          getList<{ outstanding_amount: number }>({
+            doctype: "Purchase Invoice",
+            fields: ["outstanding_amount"],
+            filters: openPIFilters,
+            limitPageLength: 0,
+          }).catch(() => [] as { outstanding_amount: number }[]),
           getCount("Sales Order", [
             ["docstatus", "=", 1],
             ["status", "not in", "Completed,Cancelled,Closed"],
           ]).catch(() => 0),
-
-          // 4. A Receber — Sales Invoice não paga
-          getList<{ outstanding_amount: number }>({
-            doctype: "Sales Invoice",
-            fields: ["outstanding_amount"],
-            filters: [
-              ["docstatus", "=", 1],
-              ["outstanding_amount", ">", 0],
-            ],
-            limitPageLength: 0,
-          }).catch(() => [] as { outstanding_amount: number }[]),
         ]);
 
-        const totalFaturamento = invoices.reduce(
-          (sum, inv) => sum + (inv.grand_total || 0),
+        const totalAReceber = openSIList.reduce(
+          (sum, inv) => sum + (inv.outstanding_amount || 0),
           0
         );
 
-        const totalAReceber = receivables.reduce(
+        const totalAPagar = openPIList.reduce(
           (sum, inv) => sum + (inv.outstanding_amount || 0),
           0
         );
 
         setKpis([
           {
-            label: "Faturamento Mês",
-            value: formatBRL(totalFaturamento),
-            subtitle: `${start.slice(0, 7)} — ${invoices.length} notas`,
-            icon: <DollarSign size={22} />,
-            trend: totalFaturamento > 0 ? "up" : "neutral",
-            color: "#10B981",
-          },
-          {
-            label: "NFs Emitidas",
-            value: String(nfCount),
-            subtitle: "Mês corrente",
-            icon: <FileText size={22} />,
-            trend: "neutral",
+            label: "Clientes Ativos",
+            value: formatNumber(activeCustomers),
+            subtitle: "Cadastrados no ERPNext2",
+            icon: <Users size={22} />,
+            trend: "up",
             color: "#3B82F6",
           },
           {
+            label: "Fornecedores Ativos",
+            value: formatNumber(activeSuppliers),
+            subtitle: "Cadastrados no ERPNext2",
+            icon: <Truck size={22} />,
+            trend: "neutral",
+            color: "#8B5CF6",
+          },
+          {
             label: "Pedidos Abertos",
-            value: String(openOrders),
+            value: formatNumber(openOrders),
             subtitle: "Aguardando processamento",
             icon: <ShoppingBag size={22} />,
             trend: openOrders > 10 ? "down" : "neutral",
             color: "#F59E0B",
           },
           {
-            label: "A Receber",
-            value: formatBRL(totalAReceber),
-            subtitle: `${receivables.length} títulos em aberto`,
+            label: "Títulos a Receber",
+            value: formatNumber(openSICount),
+            subtitle: formatBRL(totalAReceber),
+            icon: <DollarSign size={22} />,
+            trend: "up",
+            color: "#10B981",
+          },
+          {
+            label: "Títulos a Pagar",
+            value: formatNumber(openPICount),
+            subtitle: formatBRL(totalAPagar),
             icon: <CreditCard size={22} />,
-            trend: totalAReceber > 0 ? "down" : "up",
+            trend: "down",
             color: "#EF4444",
+          },
+          {
+            label: "Saldo Líquido",
+            value: formatBRL(totalAReceber - totalAPagar),
+            subtitle: `Receber - Pagar`,
+            icon: <FileText size={22} />,
+            trend: totalAReceber > totalAPagar ? "up" : "down",
+            color: totalAReceber > totalAPagar ? "#10B981" : "#EF4444",
           },
         ]);
       } catch (err) {
@@ -237,13 +245,13 @@ export default function Dashboard() {
 
       {/* KPI Grid */}
       {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {Array.from({ length: 4 }).map((_, i) => (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => (
             <KPICardSkeleton key={i} />
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {kpis.map((kpi) => (
             <KPICard key={kpi.label} data={kpi} />
           ))}
