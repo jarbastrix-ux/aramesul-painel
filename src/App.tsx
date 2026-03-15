@@ -5,6 +5,7 @@ import Dashboard from "./pages/Dashboard";
 import Vendas from "./pages/Vendas";
 import Compras from "./pages/Compras";
 import Relatorios from "./pages/Relatorios";
+import ContasReceber from "./pages/ContasReceber";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -24,6 +25,7 @@ export default function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/vendas" element={<Vendas />} />
             <Route path="/compras" element={<Compras />} />
+            <Route path="/contas-receber" element={<ContasReceber />} />
             <Route path="/relatorios" element={<Relatorios />} />
           </Route>
         </Routes>

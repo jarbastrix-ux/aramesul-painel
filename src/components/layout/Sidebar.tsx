@@ -4,6 +4,7 @@ import {
   ShoppingCart,
   Package,
   BarChart3,
+  Receipt,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
@@ -30,6 +31,11 @@ const navItems: NavItem[] = [
     label: "Compras",
     path: "/compras",
     icon: <Package size={20} />,
+  },
+  {
+    label: "Contas a Receber",
+    path: "/contas-receber",
+    icon: <Receipt size={20} />,
   },
   {
     label: "Relatórios",
