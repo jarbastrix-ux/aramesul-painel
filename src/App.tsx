@@ -2,6 +2,9 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import Shell from "./components/layout/Shell";
 import Dashboard from "./pages/Dashboard";
+import Vendas from "./pages/Vendas";
+import Compras from "./pages/Compras";
+import Relatorios from "./pages/Relatorios";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -12,17 +15,6 @@ const queryClient = new QueryClient({
   },
 });
 
-function PlaceholderPage({ title }: { title: string }) {
-  return (
-    <div className="flex items-center justify-center h-64 rounded-xl border border-border bg-card">
-      <p className="text-text-secondary text-sm">
-        Página <span className="font-semibold text-text-primary">{title}</span>{" "}
-        em construção
-      </p>
-    </div>
-  );
-}
-
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -30,18 +22,9 @@ export default function App() {
         <Routes>
           <Route element={<Shell />}>
             <Route path="/" element={<Dashboard />} />
-            <Route
-              path="/vendas"
-              element={<PlaceholderPage title="Vendas" />}
-            />
-            <Route
-              path="/compras"
-              element={<PlaceholderPage title="Compras" />}
-            />
-            <Route
-              path="/relatorios"
-              element={<PlaceholderPage title="Relatórios" />}
-            />
+            <Route path="/vendas" element={<Vendas />} />
+            <Route path="/compras" element={<Compras />} />
+            <Route path="/relatorios" element={<Relatorios />} />
           </Route>
         </Routes>
       </BrowserRouter>
