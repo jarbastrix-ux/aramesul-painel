@@ -16,7 +16,7 @@ import {
 // Tipos
 // ---------------------------------------------------------------------------
 
-const OEE_API = "http://45.55.98.244/oee";
+const OEE_API = "https://producao.mistralsteel.com.br/oee";
 
 interface KPIs {
   disp_media: number;
