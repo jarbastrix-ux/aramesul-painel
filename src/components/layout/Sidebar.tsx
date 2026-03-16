@@ -7,6 +7,7 @@ import {
   Receipt,
   ChevronLeft,
   ChevronRight,
+  Gauge,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -36,6 +37,11 @@ const navItems: NavItem[] = [
     label: "Contas a Receber",
     path: "/contas-receber",
     icon: <Receipt size={20} />,
+  },
+  {
+    label: "OEE Produção",
+    path: "/oee",
+    icon: <Gauge size={20} />,
   },
   {
     label: "Relatórios",
