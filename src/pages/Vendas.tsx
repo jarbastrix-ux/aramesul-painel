@@ -215,7 +215,7 @@ export default function Vendas() {
             ...dateFilters,
           ],
           orderBy: "due_date asc",
-          limitPageLength: 0,
+          limitPageLength: 50,
         }).catch(() => [] as SalesInvoice[]),
       ]);
 
