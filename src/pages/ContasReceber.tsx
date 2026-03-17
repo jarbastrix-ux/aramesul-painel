@@ -23,8 +23,6 @@ interface SalesInvoice {
   grand_total: number;
   outstanding_amount: number;
   status: string;
-  custom_nomus_id: string;
-  custom_nfe_origem: string;
 }
 
 interface KPIData {
@@ -255,8 +253,6 @@ export default function ContasReceber() {
               "grand_total",
               "outstanding_amount",
               "status",
-              "custom_nomus_id",
-              "custom_nfe_origem",
             ],
             filters: [
               ["docstatus", "=", 1],
@@ -322,8 +318,7 @@ export default function ContasReceber() {
     .filter(
       (inv) =>
         inv.customer_name?.toLowerCase().includes(search.toLowerCase()) ||
-        inv.name?.toLowerCase().includes(search.toLowerCase()) ||
-        inv.custom_nomus_id?.includes(search)
+        inv.name?.toLowerCase().includes(search.toLowerCase())
     )
     .sort((a, b) => {
       let cmp = 0;
@@ -402,7 +397,7 @@ export default function ContasReceber() {
               />
               <input
                 type="text"
-                placeholder="Buscar por cliente, fatura ou Nomus ID..."
+                placeholder="Buscar por cliente ou fatura..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-8 pr-3 py-1.5 text-xs border border-border rounded-lg bg-surface text-text-primary placeholder:text-text-secondary focus:outline-none focus:ring-1 focus:ring-primary w-72"
@@ -442,7 +437,7 @@ export default function ContasReceber() {
                     </span>
                   </th>
                   <th className="text-center px-4 py-3 font-medium">Status</th>
-                  <th className="text-left px-4 py-3 font-medium">Nomus ID</th>
+
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -469,15 +464,13 @@ export default function ContasReceber() {
                     <td className="px-4 py-3 text-center">
                       {getStatusBadge(inv.status, inv.due_date)}
                     </td>
-                    <td className="px-4 py-3 text-text-secondary text-xs font-mono">
-                      {inv.custom_nomus_id || "—"}
-                    </td>
+
                   </tr>
                 ))}
                 {filtered.length === 0 && (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={6}
                       className="px-4 py-8 text-center text-text-secondary text-sm"
                     >
                       Nenhuma fatura encontrada

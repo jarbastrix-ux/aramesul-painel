@@ -6,7 +6,7 @@ import {
   Loader2,
   AlertCircle,
 } from "lucide-react";
-import { getList } from "../lib/erpnext";
+import { erpnext1 } from "../lib/erpnext";
 
 // ---------------------------------------------------------------------------
 // Tipos
@@ -259,7 +259,7 @@ export default function Relatorios() {
           .split("T")[0];
 
         const [siList, piList] = await Promise.all([
-          getList<Invoice>({
+          erpnext1.getList<Invoice>({
             doctype: "Sales Invoice",
             fields: ["name", "outstanding_amount", "due_date"],
             filters: [
@@ -269,7 +269,7 @@ export default function Relatorios() {
             ],
             limitPageLength: 0,
           }).catch(() => [] as Invoice[]),
-          getList<Invoice>({
+          erpnext1.getList<Invoice>({
             doctype: "Purchase Invoice",
             fields: ["name", "outstanding_amount", "due_date"],
             filters: [
