@@ -19,9 +19,14 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   {
+    label: "Executivo",
+    path: "/executivo",
+    icon: <LayoutDashboard size={20} />,
+  },
+  {
     label: "Dashboard",
     path: "/",
-    icon: <LayoutDashboard size={20} />,
+    icon: <BarChart3 size={20} />,
   },
   {
     label: "Vendas",
