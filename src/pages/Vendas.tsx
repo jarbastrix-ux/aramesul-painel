@@ -9,7 +9,7 @@ import {
   ArrowUpDown,
   Calendar,
 } from "lucide-react";
-import { getList, getCount } from "../lib/erpnext";
+import { erpnext1 } from "../lib/erpnext";
 
 // ---------------------------------------------------------------------------
 // Tipos
@@ -196,8 +196,8 @@ export default function Vendas() {
           : [];
 
       const [totalCustomers, invoiceList] = await Promise.all([
-        getCount("Customer", [["disabled", "=", 0]]).catch(() => 0),
-        getList<SalesInvoice>({
+        erpnext1.getCount("Customer", [["disabled", "=", 0]]).catch(() => 0),
+        erpnext1.getList<SalesInvoice>({
           doctype: "Sales Invoice",
           fields: [
             "name",
@@ -236,7 +236,7 @@ export default function Vendas() {
         {
           label: "Clientes Ativos",
           value: new Intl.NumberFormat("pt-BR").format(totalCustomers),
-          subtitle: "Cadastrados no ERPNext2",
+          subtitle: "Cadastrados no ERPNext",
           icon: <Users size={22} />,
           color: "#3B82F6",
         },
@@ -260,7 +260,7 @@ export default function Vendas() {
     } catch (err) {
       console.error("[Vendas] Erro ao buscar dados:", err);
       setError(
-        err instanceof Error ? err.message : "Erro ao conectar com ERPNext2"
+        err instanceof Error ? err.message : "Erro ao conectar com ERPNext"
       );
     } finally {
       setLoading(false);
@@ -463,7 +463,7 @@ export default function Vendas() {
       {loading && (
         <div className="flex items-center justify-center gap-2 text-text-secondary text-sm py-4">
           <Loader2 size={16} className="animate-spin" />
-          <span>Buscando dados do ERPNext2...</span>
+          <span>Buscando dados do ERPNext...</span>
         </div>
       )}
     </div>

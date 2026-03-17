@@ -9,7 +9,7 @@ import {
   Search,
   ArrowUpDown,
 } from "lucide-react";
-import { getList, getCount } from "../lib/erpnext";
+import { erpnext1 } from "../lib/erpnext";
 
 // ---------------------------------------------------------------------------
 // Tipos
@@ -244,8 +244,8 @@ export default function ContasReceber() {
 
       try {
         const [totalInvoices, invoiceList] = await Promise.all([
-          getCount("Sales Invoice", [["docstatus", "=", 1]]).catch(() => 0),
-          getList<SalesInvoice>({
+          erpnext1.getCount("Sales Invoice", [["docstatus", "=", 1]]).catch(() => 0),
+          erpnext1.getList<SalesInvoice>({
             doctype: "Sales Invoice",
             fields: [
               "name",
@@ -307,7 +307,7 @@ export default function ContasReceber() {
       } catch (err) {
         console.error("[ContasReceber] Erro ao buscar dados:", err);
         setError(
-          err instanceof Error ? err.message : "Erro ao conectar com ERPNext2"
+          err instanceof Error ? err.message : "Erro ao conectar com ERPNext"
         );
       } finally {
         setLoading(false);
@@ -504,7 +504,7 @@ export default function ContasReceber() {
       {loading && (
         <div className="flex items-center justify-center gap-2 text-text-secondary text-sm py-4">
           <Loader2 size={16} className="animate-spin" />
-          <span>Buscando faturas do ERPNext2...</span>
+          <span>Buscando faturas do ERPNext...</span>
         </div>
       )}
     </div>

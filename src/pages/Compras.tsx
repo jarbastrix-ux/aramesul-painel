@@ -9,7 +9,7 @@ import {
   ArrowUpDown,
   Calendar,
 } from "lucide-react";
-import { getList, getCount } from "../lib/erpnext";
+import { erpnext1 } from "../lib/erpnext";
 
 // ---------------------------------------------------------------------------
 // Tipos
@@ -196,8 +196,8 @@ export default function Compras() {
           : [];
 
       const [totalSuppliers, invoiceList] = await Promise.all([
-        getCount("Supplier", [["disabled", "=", 0]]).catch(() => 0),
-        getList<PurchaseInvoice>({
+        erpnext1.getCount("Supplier", [["disabled", "=", 0]]).catch(() => 0),
+        erpnext1.getList<PurchaseInvoice>({
           doctype: "Purchase Invoice",
           fields: [
             "name",
@@ -236,7 +236,7 @@ export default function Compras() {
         {
           label: "Fornecedores Ativos",
           value: new Intl.NumberFormat("pt-BR").format(totalSuppliers),
-          subtitle: "Cadastrados no ERPNext2",
+          subtitle: "Cadastrados no ERPNext",
           icon: <Truck size={22} />,
           color: "#8B5CF6",
         },
@@ -260,7 +260,7 @@ export default function Compras() {
     } catch (err) {
       console.error("[Compras] Erro ao buscar dados:", err);
       setError(
-        err instanceof Error ? err.message : "Erro ao conectar com ERPNext2"
+        err instanceof Error ? err.message : "Erro ao conectar com ERPNext"
       );
     } finally {
       setLoading(false);
