@@ -182,7 +182,7 @@ export default function Vendas() {
   const [search, setSearch] = useState("");
   const [sortField, setSortField] = useState<SortField>("due_date");
   const [sortAsc, setSortAsc] = useState(true);
-  const [period, setPeriod] = useState<PeriodKey>("12m");
+  const [period, setPeriod] = useState<PeriodKey>("all");
 
   const fetchData = useCallback(async () => {
     setLoading(true);
