@@ -1,42 +1,15 @@
 /**
  * ERPNext API Client
  *
- * Clientes para comunicação com a API REST do ERPNext.
+ * Clientes para comunicação com a API REST do ERPNext via Vercel Proxy.
+ * As credenciais ficam apenas no servidor (Vercel Functions), nunca no browser.
  *
- * ERPNext2 (erp2.mistralsteel.com.br) — dados operacionais (OEE, Frota, Work Orders)
- *   VITE_ERPNEXT_URL / VITE_API_KEY / VITE_API_SECRET
+ * ERPNext2 — dados operacionais (OEE, Frota, Work Orders)
+ *   Proxy: /api/erp2/...  →  erp2.mistralsteel.com.br/api/...
  *
- * ERPNext1 (erp.mistralsteel.com.br) — dados financeiros de produção
- *   VITE_ERPNEXT1_URL / VITE_API_KEY_ERP1 / VITE_API_SECRET_ERP1
+ * ERPNext1 — dados financeiros de produção
+ *   Proxy: /api/erp1/...  →  erp.mistralsteel.com.br/api/...
  */
-
-// ---------------------------------------------------------------------------
-// Configuração ERPNext2 (padrão)
-// ---------------------------------------------------------------------------
-
-const ERPNEXT_URL = import.meta.env.VITE_ERPNEXT_URL as string;
-const API_KEY = import.meta.env.VITE_API_KEY as string;
-const API_SECRET = import.meta.env.VITE_API_SECRET as string;
-
-if (!ERPNEXT_URL || !API_KEY || !API_SECRET) {
-  console.warn(
-    "[erpnext] Variáveis de ambiente VITE_ERPNEXT_URL, VITE_API_KEY ou VITE_API_SECRET não configuradas."
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Configuração ERPNext1 (financeiro de produção)
-// ---------------------------------------------------------------------------
-
-const ERPNEXT1_URL = import.meta.env.VITE_ERPNEXT1_URL as string;
-const API_KEY_ERP1 = import.meta.env.VITE_API_KEY_ERP1 as string;
-const API_SECRET_ERP1 = import.meta.env.VITE_API_SECRET_ERP1 as string;
-
-if (!ERPNEXT1_URL || !API_KEY_ERP1 || !API_SECRET_ERP1) {
-  console.warn(
-    "[erpnext1] Variáveis de ambiente VITE_ERPNEXT1_URL, VITE_API_KEY_ERP1 ou VITE_API_SECRET_ERP1 não configuradas."
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Tipos
@@ -87,21 +60,31 @@ export interface CallOptions {
 }
 
 // ---------------------------------------------------------------------------
-// Factory de cliente ERPNext
+// Factory de cliente ERPNext (via proxy)
 // ---------------------------------------------------------------------------
 
-function createERPClient(baseUrl: string, apiKey: string, apiSecret: string) {
+/**
+ * Cria um cliente ERPNext que faz chamadas via proxy Vercel.
+ * O proxy injeta as credenciais server-side, então o frontend
+ * não precisa de tokens — apenas envia requests same-origin.
+ *
+ * @param proxyBase - Prefixo do proxy (ex: "/api/erp1" ou "/api/erp2")
+ */
+function createERPClient(proxyBase: string) {
   const headers: HeadersInit = {
     "Content-Type": "application/json",
     Accept: "application/json",
-    Authorization: `token ${apiKey}:${apiSecret}`,
   };
 
   async function erpFetch<T = unknown>(
     path: string,
     init?: RequestInit
   ): Promise<T> {
-    const url = `${baseUrl}${path}`;
+    // O path já vem com /api/resource/... ou /api/method/...
+    // Precisamos mapear para /api/erp1/resource/... ou /api/erp2/resource/...
+    // Removendo o prefixo /api do path, pois o proxyBase já tem /api/erp1
+    const cleanPath = path.startsWith("/api/") ? path.slice(4) : path;
+    const url = `${proxyBase}${cleanPath}`;
 
     const response = await fetch(url, {
       ...init,
@@ -237,18 +220,14 @@ function createERPClient(baseUrl: string, apiKey: string, apiSecret: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Instâncias dos clientes
+// Instâncias dos clientes (via proxy Vercel)
 // ---------------------------------------------------------------------------
 
 /** Cliente ERPNext2 — dados operacionais (OEE, Frota, Work Orders) */
-const erpnext = createERPClient(ERPNEXT_URL, API_KEY, API_SECRET);
+const erpnext = createERPClient("/api/erp2");
 
 /** Cliente ERPNext1 — dados financeiros de produção */
-export const erpnext1 = createERPClient(
-  ERPNEXT1_URL,
-  API_KEY_ERP1,
-  API_SECRET_ERP1
-);
+export const erpnext1 = createERPClient("/api/erp1");
 
 // ---------------------------------------------------------------------------
 // Exports compatíveis com código existente (ERPNext2 como padrão)
