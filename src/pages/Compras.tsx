@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
   Truck,
   DollarSign,
@@ -7,6 +7,7 @@ import {
   AlertCircle,
   Search,
   ArrowUpDown,
+  Calendar,
 } from "lucide-react";
 import { getList, getCount } from "../lib/erpnext";
 
@@ -33,6 +34,15 @@ interface KPIData {
   color: string;
 }
 
+type PeriodKey = "30d" | "90d" | "12m" | "all";
+
+const PERIOD_OPTIONS: { key: PeriodKey; label: string; days: number }[] = [
+  { key: "30d", label: "30 dias", days: 30 },
+  { key: "90d", label: "90 dias", days: 90 },
+  { key: "12m", label: "12 meses", days: 365 },
+  { key: "all", label: "Todos", days: 0 },
+];
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -56,8 +66,16 @@ function daysOverdue(dueDate: string): number {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const due = new Date(dueDate + "T00:00:00");
-  const diff = Math.floor((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
+  const diff = Math.floor(
+    (today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24)
+  );
   return diff;
+}
+
+function getDateNDaysAgo(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d.toISOString().split("T")[0];
 }
 
 // ---------------------------------------------------------------------------
@@ -120,6 +138,37 @@ function TableSkeleton() {
 }
 
 // ---------------------------------------------------------------------------
+// Period Selector
+// ---------------------------------------------------------------------------
+
+function PeriodSelector({
+  selected,
+  onChange,
+}: {
+  selected: PeriodKey;
+  onChange: (key: PeriodKey) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1 bg-surface rounded-lg p-1 border border-border">
+      <Calendar size={14} className="text-text-secondary ml-2 mr-1" />
+      {PERIOD_OPTIONS.map((opt) => (
+        <button
+          key={opt.key}
+          onClick={() => onChange(opt.key)}
+          className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+            selected === opt.key
+              ? "bg-primary text-white shadow-sm"
+              : "text-text-secondary hover:text-text-primary hover:bg-border/50"
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Compras Page
 // ---------------------------------------------------------------------------
 
@@ -133,86 +182,94 @@ export default function Compras() {
   const [search, setSearch] = useState("");
   const [sortField, setSortField] = useState<SortField>("due_date");
   const [sortAsc, setSortAsc] = useState(true);
+  const [period, setPeriod] = useState<PeriodKey>("12m");
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const periodOpt = PERIOD_OPTIONS.find((o) => o.key === period)!;
+      const dateFilters: [string, string, string | number][] =
+        periodOpt.days > 0
+          ? [["posting_date", ">=", getDateNDaysAgo(periodOpt.days)]]
+          : [];
+
+      const [totalSuppliers, invoiceList] = await Promise.all([
+        getCount("Supplier", [["disabled", "=", 0]]).catch(() => 0),
+        getList<PurchaseInvoice>({
+          doctype: "Purchase Invoice",
+          fields: [
+            "name",
+            "supplier_name",
+            "grand_total",
+            "outstanding_amount",
+            "due_date",
+            "posting_date",
+            "custom_nomus_id",
+            "custom_classificacao",
+          ],
+          filters: [
+            ["docstatus", "=", 1],
+            ["outstanding_amount", ">", 0],
+            ...dateFilters,
+          ],
+          orderBy: "due_date asc",
+          limitPageLength: 0,
+        }).catch(() => [] as PurchaseInvoice[]),
+      ]);
+
+      const totalOutstanding = invoiceList.reduce(
+        (sum, inv) => sum + (inv.outstanding_amount || 0),
+        0
+      );
+
+      const overdueCount = invoiceList.filter(
+        (inv) => daysOverdue(inv.due_date) > 0
+      ).length;
+
+      const overdueAmount = invoiceList
+        .filter((inv) => daysOverdue(inv.due_date) > 0)
+        .reduce((sum, inv) => sum + (inv.outstanding_amount || 0), 0);
+
+      setKpis([
+        {
+          label: "Fornecedores Ativos",
+          value: new Intl.NumberFormat("pt-BR").format(totalSuppliers),
+          subtitle: "Cadastrados no ERPNext2",
+          icon: <Truck size={22} />,
+          color: "#8B5CF6",
+        },
+        {
+          label: "Total a Pagar",
+          value: formatBRL(totalOutstanding),
+          subtitle: `${invoiceList.length} títulos em aberto`,
+          icon: <DollarSign size={22} />,
+          color: "#F59E0B",
+        },
+        {
+          label: "Vencidas",
+          value: formatBRL(overdueAmount),
+          subtitle: `${overdueCount} títulos vencidos`,
+          icon: <FileText size={22} />,
+          color: "#EF4444",
+        },
+      ]);
+
+      setInvoices(invoiceList);
+    } catch (err) {
+      console.error("[Compras] Erro ao buscar dados:", err);
+      setError(
+        err instanceof Error ? err.message : "Erro ao conectar com ERPNext2"
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [period]);
 
   useEffect(() => {
-    async function fetchData() {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const [totalSuppliers, invoiceList] = await Promise.all([
-          getCount("Supplier", [["disabled", "=", 0]]).catch(() => 0),
-          getList<PurchaseInvoice>({
-            doctype: "Purchase Invoice",
-            fields: [
-              "name",
-              "supplier_name",
-              "grand_total",
-              "outstanding_amount",
-              "due_date",
-              "posting_date",
-              "custom_nomus_id",
-              "custom_classificacao",
-            ],
-            filters: [
-              ["docstatus", "=", 1],
-              ["outstanding_amount", ">", 0],
-            ],
-            orderBy: "due_date asc",
-            limitPageLength: 0,
-          }).catch(() => [] as PurchaseInvoice[]),
-        ]);
-
-        const totalOutstanding = invoiceList.reduce(
-          (sum, inv) => sum + (inv.outstanding_amount || 0),
-          0
-        );
-
-        const overdueCount = invoiceList.filter(
-          (inv) => daysOverdue(inv.due_date) > 0
-        ).length;
-
-        const overdueAmount = invoiceList
-          .filter((inv) => daysOverdue(inv.due_date) > 0)
-          .reduce((sum, inv) => sum + (inv.outstanding_amount || 0), 0);
-
-        setKpis([
-          {
-            label: "Fornecedores Ativos",
-            value: new Intl.NumberFormat("pt-BR").format(totalSuppliers),
-            subtitle: "Cadastrados no ERPNext2",
-            icon: <Truck size={22} />,
-            color: "#8B5CF6",
-          },
-          {
-            label: "Total a Pagar",
-            value: formatBRL(totalOutstanding),
-            subtitle: `${invoiceList.length} títulos em aberto`,
-            icon: <DollarSign size={22} />,
-            color: "#F59E0B",
-          },
-          {
-            label: "Vencidas",
-            value: formatBRL(overdueAmount),
-            subtitle: `${overdueCount} títulos vencidos`,
-            icon: <FileText size={22} />,
-            color: "#EF4444",
-          },
-        ]);
-
-        setInvoices(invoiceList);
-      } catch (err) {
-        console.error("[Compras] Erro ao buscar dados:", err);
-        setError(
-          err instanceof Error ? err.message : "Erro ao conectar com ERPNext2"
-        );
-      } finally {
-        setLoading(false);
-      }
-    }
-
     fetchData();
-  }, []);
+  }, [fetchData]);
 
   const filtered = invoices.filter(
     (inv) =>
@@ -244,11 +301,14 @@ export default function Compras() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-text-primary">Compras</h1>
-        <p className="text-sm text-text-secondary mt-1">
-          Contas a pagar e indicadores de compras
-        </p>
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-text-primary">Compras</h1>
+          <p className="text-sm text-text-secondary mt-1">
+            Contas a pagar e indicadores de compras
+          </p>
+        </div>
+        <PeriodSelector selected={period} onChange={setPeriod} />
       </div>
 
       {/* Error */}

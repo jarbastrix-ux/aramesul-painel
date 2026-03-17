@@ -316,9 +316,14 @@ export default function DashboardExecutivo() {
         ["outstanding_amount", ">", 0],
       ];
 
+      const oneYearAgo = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .split("T")[0];
+
       const openPIFilters: ERPFilter[] = [
         ["docstatus", "=", 1],
         ["outstanding_amount", ">", 0],
+        ["due_date", ">=", oneYearAgo],
       ];
 
       const [
@@ -439,7 +444,7 @@ export default function DashboardExecutivo() {
       // ---- Alertas ----
       const newAlertas: Alerta[] = [];
 
-      // CR vencidas > 90 dias
+      // CR vencidas > 90 dias (limitado a 365 dias para nao mostrar historico antigo)
       const ninetyDaysAgo = new Date(
         now.getTime() - 90 * 24 * 60 * 60 * 1000
       );
@@ -447,6 +452,7 @@ export default function DashboardExecutivo() {
         ["docstatus", "=", 1],
         ["outstanding_amount", ">", 0],
         ["due_date", "<", ninetyDaysAgo.toISOString().split("T")[0]],
+        ["due_date", ">=", oneYearAgo],
       ]).catch(() => 0);
 
       if (crVencidas > 0) {

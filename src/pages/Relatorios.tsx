@@ -252,6 +252,12 @@ export default function Relatorios() {
       setError(null);
 
       try {
+        const oneYearAgo = new Date(
+          Date.now() - 365 * 24 * 60 * 60 * 1000
+        )
+          .toISOString()
+          .split("T")[0];
+
         const [siList, piList] = await Promise.all([
           getList<Invoice>({
             doctype: "Sales Invoice",
@@ -259,6 +265,7 @@ export default function Relatorios() {
             filters: [
               ["docstatus", "=", 1],
               ["outstanding_amount", ">", 0],
+              ["due_date", ">=", oneYearAgo],
             ],
             limitPageLength: 0,
           }).catch(() => [] as Invoice[]),
@@ -268,6 +275,7 @@ export default function Relatorios() {
             filters: [
               ["docstatus", "=", 1],
               ["outstanding_amount", ">", 0],
+              ["due_date", ">=", oneYearAgo],
             ],
             limitPageLength: 0,
           }).catch(() => [] as Invoice[]),
@@ -336,7 +344,7 @@ export default function Relatorios() {
       <div>
         <h1 className="text-2xl font-bold text-text-primary">Relatórios</h1>
         <p className="text-sm text-text-secondary mt-1">
-          Aging Analysis — Contas a Receber e Contas a Pagar
+          Aging Analysis — Contas a Receber e Contas a Pagar (últimos 12 meses)
         </p>
       </div>
 
