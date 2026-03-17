@@ -774,7 +774,8 @@ export default function DashboardExecutivo() {
                         {wo.name}
                       </td>
                       <td className="px-4 py-3 text-text-primary">
-                        {wo.item_name || wo.production_item}
+                        <div className="font-medium">{wo.item_name || wo.production_item}</div>
+                        <div className="text-xs text-text-secondary">{wo.production_item}</div>
                       </td>
                       <td className="px-4 py-3 text-right font-medium text-text-primary">
                         {formatNumber(wo.qty)}
