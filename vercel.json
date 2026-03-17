@@ -1,15 +1,7 @@
 {
-  "functions": {
-    "api/erp1/[...path].ts": {
-      "runtime": "@vercel/node@3"
-    },
-    "api/erp2/[...path].ts": {
-      "runtime": "@vercel/node@3"
-    }
-  },
   "rewrites": [
-    { "source": "/api/erp1/(.*)", "destination": "/api/erp1/[...path]" },
-    { "source": "/api/erp2/(.*)", "destination": "/api/erp2/[...path]" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/api/erp1/:path*", "destination": "/api/erp1/[...path]" },
+    { "source": "/api/erp2/:path*", "destination": "/api/erp2/[...path]" },
+    { "source": "/:path((?!api).*)", "destination": "/index.html" }
   ]
 }
