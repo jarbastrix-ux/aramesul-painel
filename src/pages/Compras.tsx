@@ -453,7 +453,7 @@ export default function Compras() {
       {loading && (
         <div className="flex items-center justify-center gap-2 text-text-secondary text-sm py-4">
           <Loader2 size={16} className="animate-spin" />
-          <span>Buscando dados do ERPNext2...</span>
+          <span>Buscando dados do ERPNext...</span>
         </div>
       )}
     </div>

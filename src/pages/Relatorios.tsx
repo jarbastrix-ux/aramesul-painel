@@ -328,7 +328,7 @@ export default function Relatorios() {
       } catch (err) {
         console.error("[Relatórios] Erro ao buscar dados:", err);
         setError(
-          err instanceof Error ? err.message : "Erro ao conectar com ERPNext2"
+          err instanceof Error ? err.message : "Erro ao conectar com ERPNext"
         );
       } finally {
         setLoading(false);
