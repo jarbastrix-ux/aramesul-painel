@@ -402,7 +402,7 @@ export default function DashboardExecutivo() {
       // ---- Frota (ERPNext2) ----
       const today = now.toISOString().split("T")[0];
       const [totalVehicles, totalDrivers, tripsToday] = await Promise.all([
-        getCount("Vehicle", [["disabled", "=", 0]]).catch(() => 0),
+        getCount("Vehicle", []).catch(() => 0),
         getCount("Driver", [["status", "=", "Active"]]).catch(() => 0),
         getCount("Delivery Trip", [
           ["docstatus", "=", 1],
