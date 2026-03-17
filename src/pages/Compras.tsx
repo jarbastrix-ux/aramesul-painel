@@ -22,8 +22,6 @@ interface PurchaseInvoice {
   outstanding_amount: number;
   due_date: string;
   posting_date: string;
-  custom_nomus_id: string;
-  custom_classificacao: string;
 }
 
 interface KPIData {
@@ -206,8 +204,6 @@ export default function Compras() {
             "outstanding_amount",
             "due_date",
             "posting_date",
-            "custom_nomus_id",
-            "custom_classificacao",
           ],
           filters: [
             ["docstatus", "=", 1],
@@ -274,8 +270,7 @@ export default function Compras() {
   const filtered = invoices.filter(
     (inv) =>
       inv.supplier_name?.toLowerCase().includes(search.toLowerCase()) ||
-      inv.name?.toLowerCase().includes(search.toLowerCase()) ||
-      inv.custom_nomus_id?.includes(search)
+      inv.name?.toLowerCase().includes(search.toLowerCase())
   );
 
   const sorted = [...filtered].sort((a, b) => {
@@ -353,7 +348,7 @@ export default function Compras() {
               />
               <input
                 type="text"
-                placeholder="Buscar por fornecedor, fatura ou Nomus ID..."
+                placeholder="Buscar por fornecedor ou fatura..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-8 pr-3 py-1.5 text-xs border border-border rounded-lg bg-surface text-text-primary placeholder:text-text-secondary focus:outline-none focus:ring-1 focus:ring-primary w-72"
@@ -409,11 +404,6 @@ export default function Compras() {
                         <div className="text-text-primary font-mono text-xs font-medium">
                           {inv.name}
                         </div>
-                        {inv.custom_nomus_id && (
-                          <div className="text-text-secondary text-[10px] mt-0.5">
-                            Nomus: {inv.custom_nomus_id}
-                          </div>
-                        )}
                       </td>
                       <td className="px-4 py-3 text-text-primary max-w-xs truncate">
                         {inv.supplier_name}
