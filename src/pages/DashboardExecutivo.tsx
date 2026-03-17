@@ -18,7 +18,7 @@ import {
   Factory,
   FileWarning,
 } from "lucide-react";
-import { getList, getCount } from "../lib/erpnext";
+import { getList, getCount, erpnext1 } from "../lib/erpnext";
 import type { ERPFilter } from "../lib/erpnext";
 
 // ---------------------------------------------------------------------------
@@ -307,7 +307,7 @@ export default function DashboardExecutivo() {
     setError(null);
 
     try {
-      // ---- Financeiro (ERPNext2) ----
+      // ---- Financeiro (ERPNext1 — produção) ----
       const now = new Date();
       const firstOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
 
@@ -332,7 +332,7 @@ export default function DashboardExecutivo() {
         aPagarList,
         pedidosAbertos,
       ] = await Promise.all([
-        getList<{ grand_total: number }>({
+        erpnext1.getList<{ grand_total: number }>({
           doctype: "Sales Invoice",
           fields: ["grand_total"],
           filters: [
@@ -341,19 +341,19 @@ export default function DashboardExecutivo() {
           ],
           limitPageLength: 0,
         }).catch(() => [] as { grand_total: number }[]),
-        getList<{ outstanding_amount: number }>({
+        erpnext1.getList<{ outstanding_amount: number }>({
           doctype: "Sales Invoice",
           fields: ["outstanding_amount"],
           filters: openSIFilters,
           limitPageLength: 0,
         }).catch(() => [] as { outstanding_amount: number }[]),
-        getList<{ outstanding_amount: number }>({
+        erpnext1.getList<{ outstanding_amount: number }>({
           doctype: "Purchase Invoice",
           fields: ["outstanding_amount"],
           filters: openPIFilters,
           limitPageLength: 0,
         }).catch(() => [] as { outstanding_amount: number }[]),
-        getCount("Sales Order", [
+        erpnext1.getCount("Sales Order", [
           ["docstatus", "=", 1],
           ["status", "not in", "Completed,Cancelled,Closed"],
         ]).catch(() => 0),
@@ -448,7 +448,7 @@ export default function DashboardExecutivo() {
       const ninetyDaysAgo = new Date(
         now.getTime() - 90 * 24 * 60 * 60 * 1000
       );
-      const crVencidas = await getCount("Sales Invoice", [
+      const crVencidas = await erpnext1.getCount("Sales Invoice", [
         ["docstatus", "=", 1],
         ["outstanding_amount", ">", 0],
         ["due_date", "<", ninetyDaysAgo.toISOString().split("T")[0]],

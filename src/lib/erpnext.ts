@@ -1,14 +1,18 @@
 /**
  * ERPNext API Client
  *
- * Cliente base para comunicação com a API REST do ERPNext.
- * Utiliza autenticação por token (API Key + API Secret).
+ * Clientes para comunicação com a API REST do ERPNext.
  *
- * Variáveis de ambiente (Vite):
- *   VITE_ERPNEXT_URL   - URL base do ERPNext (ex: https://erp2.mistralsteel.com.br)
- *   VITE_API_KEY        - API Key gerada no ERPNext
- *   VITE_API_SECRET     - API Secret correspondente
+ * ERPNext2 (erp2.mistralsteel.com.br) — dados operacionais (OEE, Frota, Work Orders)
+ *   VITE_ERPNEXT_URL / VITE_API_KEY / VITE_API_SECRET
+ *
+ * ERPNext1 (erp.mistralsteel.com.br) — dados financeiros de produção
+ *   VITE_ERPNEXT1_URL / VITE_API_KEY_ERP1 / VITE_API_SECRET_ERP1
  */
+
+// ---------------------------------------------------------------------------
+// Configuração ERPNext2 (padrão)
+// ---------------------------------------------------------------------------
 
 const ERPNEXT_URL = import.meta.env.VITE_ERPNEXT_URL as string;
 const API_KEY = import.meta.env.VITE_API_KEY as string;
@@ -20,12 +24,19 @@ if (!ERPNEXT_URL || !API_KEY || !API_SECRET) {
   );
 }
 
-/** Cabeçalhos padrão para todas as requisições */
-const defaultHeaders: HeadersInit = {
-  "Content-Type": "application/json",
-  Accept: "application/json",
-  Authorization: `token ${API_KEY}:${API_SECRET}`,
-};
+// ---------------------------------------------------------------------------
+// Configuração ERPNext1 (financeiro de produção)
+// ---------------------------------------------------------------------------
+
+const ERPNEXT1_URL = import.meta.env.VITE_ERPNEXT1_URL as string;
+const API_KEY_ERP1 = import.meta.env.VITE_API_KEY_ERP1 as string;
+const API_SECRET_ERP1 = import.meta.env.VITE_API_SECRET_ERP1 as string;
+
+if (!ERPNEXT1_URL || !API_KEY_ERP1 || !API_SECRET_ERP1) {
+  console.warn(
+    "[erpnext1] Variáveis de ambiente VITE_ERPNEXT1_URL, VITE_API_KEY_ERP1 ou VITE_API_SECRET_ERP1 não configuradas."
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Tipos
@@ -76,234 +87,179 @@ export interface CallOptions {
 }
 
 // ---------------------------------------------------------------------------
-// Funções auxiliares
+// Factory de cliente ERPNext
 // ---------------------------------------------------------------------------
 
-/**
- * Wrapper genérico para fetch com tratamento de erro padronizado.
- */
-async function erpFetch<T = unknown>(
-  path: string,
-  init?: RequestInit
-): Promise<T> {
-  const url = `${ERPNEXT_URL}${path}`;
+function createERPClient(baseUrl: string, apiKey: string, apiSecret: string) {
+  const headers: HeadersInit = {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+    Authorization: `token ${apiKey}:${apiSecret}`,
+  };
 
-  const response = await fetch(url, {
-    ...init,
-    headers: {
-      ...defaultHeaders,
-      ...(init?.headers ?? {}),
-    },
-  });
+  async function erpFetch<T = unknown>(
+    path: string,
+    init?: RequestInit
+  ): Promise<T> {
+    const url = `${baseUrl}${path}`;
 
-  if (!response.ok) {
-    const errorBody = await response.text();
-    throw new Error(
-      `[erpnext] ${response.status} ${response.statusText} — ${errorBody}`
+    const response = await fetch(url, {
+      ...init,
+      headers: {
+        ...headers,
+        ...(init?.headers ?? {}),
+      },
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      throw new Error(
+        `[erpnext] ${response.status} ${response.statusText} — ${errorBody}`
+      );
+    }
+
+    const json = await response.json();
+    return json as T;
+  }
+
+  async function getList<T = Record<string, unknown>>(
+    options: GetListOptions
+  ): Promise<T[]> {
+    const {
+      doctype,
+      fields = ["name"],
+      filters = [],
+      orderBy = "creation desc",
+      limitPageLength = 20,
+      limitStart = 0,
+    } = options;
+
+    const params = new URLSearchParams({
+      fields: JSON.stringify(fields),
+      filters: JSON.stringify(filters),
+      order_by: orderBy,
+      limit_page_length: String(limitPageLength),
+      limit_start: String(limitStart),
+    });
+
+    const result = await erpFetch<{ data: T[] }>(
+      `/api/resource/${doctype}?${params.toString()}`
+    );
+
+    return result.data;
+  }
+
+  async function getDoc<T = Record<string, unknown>>(
+    options: GetDocOptions
+  ): Promise<T> {
+    const { doctype, name } = options;
+
+    const result = await erpFetch<{ data: T }>(
+      `/api/resource/${doctype}/${encodeURIComponent(name)}`
+    );
+
+    return result.data;
+  }
+
+  async function createDoc<T = Record<string, unknown>>(
+    options: CreateDocOptions
+  ): Promise<T> {
+    const { doctype, data } = options;
+
+    const result = await erpFetch<{ data: T }>(`/api/resource/${doctype}`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+
+    return result.data;
+  }
+
+  async function updateDoc<T = Record<string, unknown>>(
+    options: UpdateDocOptions
+  ): Promise<T> {
+    const { doctype, name, data } = options;
+
+    const result = await erpFetch<{ data: T }>(
+      `/api/resource/${doctype}/${encodeURIComponent(name)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(data),
+      }
+    );
+
+    return result.data;
+  }
+
+  async function deleteDoc(options: DeleteDocOptions): Promise<void> {
+    const { doctype, name } = options;
+
+    await erpFetch(
+      `/api/resource/${doctype}/${encodeURIComponent(name)}`,
+      { method: "DELETE" }
     );
   }
 
-  const json = await response.json();
-  return json as T;
+  async function call<T = unknown>(options: CallOptions): Promise<T> {
+    const { method, args = {} } = options;
+
+    const result = await erpFetch<{ message: T }>(
+      `/api/method/${method}`,
+      {
+        method: "POST",
+        body: JSON.stringify(args),
+      }
+    );
+
+    return result.message;
+  }
+
+  async function getCount(
+    doctype: string,
+    filters: ERPFilter[] = []
+  ): Promise<number> {
+    const result = await call<number>({
+      method: "frappe.client.get_count",
+      args: { doctype, filters },
+    });
+
+    return result;
+  }
+
+  return {
+    getList,
+    getDoc,
+    createDoc,
+    updateDoc,
+    deleteDoc,
+    call,
+    getCount,
+  };
 }
 
 // ---------------------------------------------------------------------------
-// API Pública
+// Instâncias dos clientes
 // ---------------------------------------------------------------------------
 
-/**
- * Retorna uma lista de documentos de um DocType.
- *
- * @example
- * ```ts
- * const customers = await getList({
- *   doctype: "Customer",
- *   fields: ["name", "customer_name", "tax_id"],
- *   filters: [["customer_type", "=", "Company"]],
- *   orderBy: "creation desc",
- *   limitPageLength: 20,
- * });
- * ```
- */
-export async function getList<T = Record<string, unknown>>(
-  options: GetListOptions
-): Promise<T[]> {
-  const {
-    doctype,
-    fields = ["name"],
-    filters = [],
-    orderBy = "creation desc",
-    limitPageLength = 20,
-    limitStart = 0,
-  } = options;
+/** Cliente ERPNext2 — dados operacionais (OEE, Frota, Work Orders) */
+const erpnext = createERPClient(ERPNEXT_URL, API_KEY, API_SECRET);
 
-  const params = new URLSearchParams({
-    fields: JSON.stringify(fields),
-    filters: JSON.stringify(filters),
-    order_by: orderBy,
-    limit_page_length: String(limitPageLength),
-    limit_start: String(limitStart),
-  });
-
-  const result = await erpFetch<{ data: T[] }>(
-    `/api/resource/${doctype}?${params.toString()}`
-  );
-
-  return result.data;
-}
-
-/**
- * Retorna um documento específico pelo nome.
- *
- * @example
- * ```ts
- * const customer = await getDoc({
- *   doctype: "Customer",
- *   name: "GV DO BRASIL INDUSTRIA E COMERCIO DE ACO LTDA",
- * });
- * ```
- */
-export async function getDoc<T = Record<string, unknown>>(
-  options: GetDocOptions
-): Promise<T> {
-  const { doctype, name } = options;
-
-  const result = await erpFetch<{ data: T }>(
-    `/api/resource/${doctype}/${encodeURIComponent(name)}`
-  );
-
-  return result.data;
-}
-
-/**
- * Cria um novo documento no ERPNext.
- *
- * @example
- * ```ts
- * const newItem = await createDoc({
- *   doctype: "Item",
- *   data: { item_code: "TEST-001", item_name: "Teste", item_group: "Products" },
- * });
- * ```
- */
-export async function createDoc<T = Record<string, unknown>>(
-  options: CreateDocOptions
-): Promise<T> {
-  const { doctype, data } = options;
-
-  const result = await erpFetch<{ data: T }>(
-    `/api/resource/${doctype}`,
-    {
-      method: "POST",
-      body: JSON.stringify(data),
-    }
-  );
-
-  return result.data;
-}
-
-/**
- * Atualiza um documento existente no ERPNext.
- *
- * @example
- * ```ts
- * await updateDoc({
- *   doctype: "Customer",
- *   name: "CUST-00001",
- *   data: { customer_name: "Novo Nome" },
- * });
- * ```
- */
-export async function updateDoc<T = Record<string, unknown>>(
-  options: UpdateDocOptions
-): Promise<T> {
-  const { doctype, name, data } = options;
-
-  const result = await erpFetch<{ data: T }>(
-    `/api/resource/${doctype}/${encodeURIComponent(name)}`,
-    {
-      method: "PUT",
-      body: JSON.stringify(data),
-    }
-  );
-
-  return result.data;
-}
-
-/**
- * Exclui um documento do ERPNext.
- *
- * @example
- * ```ts
- * await deleteDoc({ doctype: "Item", name: "TEST-001" });
- * ```
- */
-export async function deleteDoc(options: DeleteDocOptions): Promise<void> {
-  const { doctype, name } = options;
-
-  await erpFetch(
-    `/api/resource/${doctype}/${encodeURIComponent(name)}`,
-    { method: "DELETE" }
-  );
-}
-
-/**
- * Executa uma chamada RPC (Remote Procedure Call) genérica.
- *
- * @example
- * ```ts
- * const result = await call({
- *   method: "frappe.client.get_count",
- *   args: { doctype: "Customer" },
- * });
- * ```
- */
-export async function call<T = unknown>(options: CallOptions): Promise<T> {
-  const { method, args = {} } = options;
-
-  const result = await erpFetch<{ message: T }>(
-    `/api/method/${method}`,
-    {
-      method: "POST",
-      body: JSON.stringify(args),
-    }
-  );
-
-  return result.message;
-}
-
-/**
- * Retorna a contagem total de documentos de um DocType.
- *
- * @example
- * ```ts
- * const total = await getCount("Customer", [["disabled", "=", 0]]);
- * ```
- */
-export async function getCount(
-  doctype: string,
-  filters: ERPFilter[] = []
-): Promise<number> {
-  const result = await call<number>({
-    method: "frappe.client.get_count",
-    args: { doctype, filters },
-  });
-
-  return result;
-}
+/** Cliente ERPNext1 — dados financeiros de produção */
+export const erpnext1 = createERPClient(
+  ERPNEXT1_URL,
+  API_KEY_ERP1,
+  API_SECRET_ERP1
+);
 
 // ---------------------------------------------------------------------------
-// Export default como namespace
+// Exports compatíveis com código existente (ERPNext2 como padrão)
 // ---------------------------------------------------------------------------
 
-const erpnext = {
-  getList,
-  getDoc,
-  createDoc,
-  updateDoc,
-  deleteDoc,
-  call,
-  getCount,
-};
+export const getList = erpnext.getList;
+export const getDoc = erpnext.getDoc;
+export const createDoc = erpnext.createDoc;
+export const updateDoc = erpnext.updateDoc;
+export const deleteDoc = erpnext.deleteDoc;
+export const call = erpnext.call;
+export const getCount = erpnext.getCount;
 
 export default erpnext;
