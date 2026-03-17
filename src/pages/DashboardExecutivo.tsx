@@ -56,10 +56,10 @@ interface FrotaKPIs {
 interface WorkOrderRow {
   name: string;
   production_item: string;
+  item_name: string;
   qty: number;
   status: string;
   planned_start_date: string;
-  custom_prioridade_nomus: string;
 }
 
 interface Alerta {
@@ -427,10 +427,10 @@ export default function DashboardExecutivo() {
         fields: [
           "name",
           "production_item",
+          "item_name",
           "qty",
           "status",
           "planned_start_date",
-          "custom_prioridade_nomus",
         ],
         filters: [
           ["status", "not in", "Completed,Cancelled,Closed,Stopped"],
@@ -762,9 +762,6 @@ export default function DashboardExecutivo() {
                     <th className="text-left px-4 py-3 font-medium text-text-secondary">
                       Data Planejada
                     </th>
-                    <th className="text-left px-4 py-3 font-medium text-text-secondary">
-                      Prioridade
-                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -777,7 +774,7 @@ export default function DashboardExecutivo() {
                         {wo.name}
                       </td>
                       <td className="px-4 py-3 text-text-primary">
-                        {wo.production_item}
+                        {wo.item_name || wo.production_item}
                       </td>
                       <td className="px-4 py-3 text-right font-medium text-text-primary">
                         {formatNumber(wo.qty)}
@@ -796,9 +793,7 @@ export default function DashboardExecutivo() {
                             )
                           : "—"}
                       </td>
-                      <td className="px-4 py-3 text-text-secondary text-xs">
-                        {wo.custom_prioridade_nomus || "—"}
-                      </td>
+
                     </tr>
                   ))}
                 </tbody>
