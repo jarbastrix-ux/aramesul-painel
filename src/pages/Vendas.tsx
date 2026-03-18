@@ -1,27 +1,51 @@
 import { useEffect, useState, useCallback } from "react";
 import {
-  Users,
   DollarSign,
   FileText,
   Loader2,
   AlertCircle,
   Search,
   ArrowUpDown,
-  Calendar,
+  Building2,
 } from "lucide-react";
-import { erpnext1 } from "../lib/erpnext";
+
+// ---------------------------------------------------------------------------
+// Constantes
+// ---------------------------------------------------------------------------
+
+const FINANCEIRO_API = "https://financeiro.mistralsteel.com.br/financeiro";
 
 // ---------------------------------------------------------------------------
 // Tipos
 // ---------------------------------------------------------------------------
 
-interface SalesInvoice {
-  name: string;
-  customer_name: string;
-  grand_total: number;
-  outstanding_amount: number;
-  due_date: string;
-  posting_date: string;
+interface CRTitulo {
+  id: number;
+  empresa: string;
+  cliente: string;
+  cnpj: string;
+  valor: number;
+  saldo: number;
+  vencimento: string;
+  classificacao: string;
+  forma_pagamento: string | null;
+  descricao: string;
+  nf_origem: string | null;
+}
+
+interface CRResponse {
+  total: number;
+  limit: number;
+  offset: number;
+  titulos: CRTitulo[];
+}
+
+interface ResumoResponse {
+  cr_aberto_total: number;
+  cr_aberto_aramesul: number;
+  cr_aberto_arametrix: number;
+  cr_titulos: number;
+  [key: string]: number;
 }
 
 interface KPIData {
@@ -32,14 +56,7 @@ interface KPIData {
   color: string;
 }
 
-type PeriodKey = "30d" | "90d" | "12m" | "all";
-
-const PERIOD_OPTIONS: { key: PeriodKey; label: string; days: number }[] = [
-  { key: "30d", label: "30 dias", days: 30 },
-  { key: "90d", label: "90 dias", days: 90 },
-  { key: "12m", label: "12 meses", days: 365 },
-  { key: "all", label: "Todos", days: 0 },
-];
+type EmpresaFilter = "TODAS" | "ARAMESUL" | "ARAMETRIX";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -68,12 +85,6 @@ function daysOverdue(dueDate: string): number {
     (today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24)
   );
   return diff;
-}
-
-function getDateNDaysAgo(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  return d.toISOString().split("T")[0];
 }
 
 // ---------------------------------------------------------------------------
@@ -136,20 +147,26 @@ function TableSkeleton() {
 }
 
 // ---------------------------------------------------------------------------
-// Period Selector
+// Empresa Selector
 // ---------------------------------------------------------------------------
 
-function PeriodSelector({
+function EmpresaSelector({
   selected,
   onChange,
 }: {
-  selected: PeriodKey;
-  onChange: (key: PeriodKey) => void;
+  selected: EmpresaFilter;
+  onChange: (key: EmpresaFilter) => void;
 }) {
+  const options: { key: EmpresaFilter; label: string }[] = [
+    { key: "TODAS", label: "Todas" },
+    { key: "ARAMESUL", label: "Aramesul" },
+    { key: "ARAMETRIX", label: "Arametrix" },
+  ];
+
   return (
     <div className="flex items-center gap-1 bg-surface rounded-lg p-1 border border-border">
-      <Calendar size={14} className="text-text-secondary ml-2 mr-1" />
-      {PERIOD_OPTIONS.map((opt) => (
+      <Building2 size={14} className="text-text-secondary ml-2 mr-1" />
+      {options.map((opt) => (
         <button
           key={opt.key}
           onClick={() => onChange(opt.key)}
@@ -170,117 +187,118 @@ function PeriodSelector({
 // Vendas Page
 // ---------------------------------------------------------------------------
 
-type SortField = "customer_name" | "outstanding_amount" | "due_date";
+type SortField = "cliente" | "saldo" | "vencimento";
 
 export default function Vendas() {
   const [kpis, setKpis] = useState<KPIData[]>([]);
-  const [invoices, setInvoices] = useState<SalesInvoice[]>([]);
+  const [titulos, setTitulos] = useState<CRTitulo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [sortField, setSortField] = useState<SortField>("due_date");
+  const [sortField, setSortField] = useState<SortField>("vencimento");
   const [sortAsc, setSortAsc] = useState(true);
-  const [period, setPeriod] = useState<PeriodKey>("all");
+  const [empresa, setEmpresa] = useState<EmpresaFilter>("TODAS");
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
-      const periodOpt = PERIOD_OPTIONS.find((o) => o.key === period)!;
-      const dateFilters: [string, string, string | number][] =
-        periodOpt.days > 0
-          ? [["posting_date", ">=", getDateNDaysAgo(periodOpt.days)]]
-          : [];
+      const empresaParam =
+        empresa !== "TODAS" ? `&empresa=${empresa}` : "";
 
-      const [totalCustomers, invoiceList] = await Promise.all([
-        erpnext1.getCount("Customer", [["disabled", "=", 0]]).catch(() => 0),
-        erpnext1.getList<SalesInvoice>({
-          doctype: "Sales Invoice",
-          fields: [
-            "name",
-            "customer_name",
-            "grand_total",
-            "outstanding_amount",
-            "due_date",
-            "posting_date",
-          ],
-          filters: [
-            ["docstatus", "=", 1],
-            ["outstanding_amount", ">", 0],
-            ...dateFilters,
-          ],
-          orderBy: "due_date asc",
-          limitPageLength: 50,
-        }).catch(() => [] as SalesInvoice[]),
+      const [resumoRes, crRes] = await Promise.all([
+        fetch(`${FINANCEIRO_API}/resumo`)
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null) as Promise<ResumoResponse | null>,
+        fetch(`${FINANCEIRO_API}/cr?limit=200${empresaParam}`)
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null) as Promise<CRResponse | null>,
       ]);
 
-      const totalOutstanding = invoiceList.reduce(
-        (sum, inv) => sum + (inv.outstanding_amount || 0),
+      const titulosList = crRes?.titulos ?? [];
+
+      // KPIs do resumo (total real do banco, não apenas os 200 exibidos)
+      const totalReceber =
+        empresa === "ARAMESUL"
+          ? resumoRes?.cr_aberto_aramesul ?? 0
+          : empresa === "ARAMETRIX"
+            ? resumoRes?.cr_aberto_arametrix ?? 0
+            : resumoRes?.cr_aberto_total ?? 0;
+
+      const totalTitulos = crRes?.total ?? resumoRes?.cr_titulos ?? 0;
+
+      // Vencidas — calculadas a partir dos títulos carregados
+      const overdueList = titulosList.filter(
+        (t) => daysOverdue(t.vencimento) > 0
+      );
+      const overdueAmount = overdueList.reduce(
+        (sum, t) => sum + (t.saldo || 0),
         0
       );
 
-      const overdueCount = invoiceList.filter(
-        (inv) => daysOverdue(inv.due_date) > 0
-      ).length;
-
-      const overdueAmount = invoiceList
-        .filter((inv) => daysOverdue(inv.due_date) > 0)
-        .reduce((sum, inv) => sum + (inv.outstanding_amount || 0), 0);
-
       setKpis([
         {
-          label: "Clientes Ativos",
-          value: new Intl.NumberFormat("pt-BR").format(totalCustomers),
-          subtitle: "Cadastrados no ERPNext",
-          icon: <Users size={22} />,
-          color: "#3B82F6",
-        },
-        {
           label: "Total a Receber",
-          value: formatBRL(totalOutstanding),
-          subtitle: `${invoiceList.length} títulos em aberto`,
+          value: formatBRL(totalReceber),
+          subtitle: `${totalTitulos} títulos em aberto`,
           icon: <DollarSign size={22} />,
           color: "#10B981",
         },
         {
           label: "Vencidas",
           value: formatBRL(overdueAmount),
-          subtitle: `${overdueCount} títulos vencidos`,
+          subtitle: `${overdueList.length} títulos vencidos`,
           icon: <FileText size={22} />,
           color: "#EF4444",
         },
+        {
+          label: "A Vencer",
+          value: formatBRL(
+            titulosList
+              .filter((t) => daysOverdue(t.vencimento) <= 0)
+              .reduce((sum, t) => sum + (t.saldo || 0), 0)
+          ),
+          subtitle: `${titulosList.filter((t) => daysOverdue(t.vencimento) <= 0).length} títulos`,
+          icon: <DollarSign size={22} />,
+          color: "#3B82F6",
+        },
       ]);
 
-      setInvoices(invoiceList);
+      setTitulos(titulosList);
     } catch (err) {
       console.error("[Vendas] Erro ao buscar dados:", err);
       setError(
-        err instanceof Error ? err.message : "Erro ao conectar com ERPNext"
+        err instanceof Error ? err.message : "Erro ao conectar com API Financeira"
       );
     } finally {
       setLoading(false);
     }
-  }, [period]);
+  }, [empresa]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
-  const filtered = invoices.filter(
-    (inv) =>
-      inv.customer_name?.toLowerCase().includes(search.toLowerCase()) ||
-      inv.name?.toLowerCase().includes(search.toLowerCase())
+  const filtered = titulos.filter(
+    (t) =>
+      t.cliente?.toLowerCase().includes(search.toLowerCase()) ||
+      t.cnpj?.toLowerCase().includes(search.toLowerCase()) ||
+      t.descricao?.toLowerCase().includes(search.toLowerCase()) ||
+      t.nf_origem?.toLowerCase().includes(search.toLowerCase())
   );
 
   const sorted = [...filtered].sort((a, b) => {
-    if (sortField === "outstanding_amount") {
-      return sortAsc
-        ? a.outstanding_amount - b.outstanding_amount
-        : b.outstanding_amount - a.outstanding_amount;
+    if (sortField === "saldo") {
+      return sortAsc ? a.saldo - b.saldo : b.saldo - a.saldo;
     }
-    const aVal = (a[sortField] ?? "").toString().toLowerCase();
-    const bVal = (b[sortField] ?? "").toString().toLowerCase();
+    if (sortField === "vencimento") {
+      return sortAsc
+        ? a.vencimento.localeCompare(b.vencimento)
+        : b.vencimento.localeCompare(a.vencimento);
+    }
+    const aVal = (a.cliente ?? "").toLowerCase();
+    const bVal = (b.cliente ?? "").toLowerCase();
     return sortAsc ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
   });
 
@@ -300,10 +318,10 @@ export default function Vendas() {
         <div>
           <h1 className="text-2xl font-bold text-text-primary">Vendas</h1>
           <p className="text-sm text-text-secondary mt-1">
-            Contas a receber e indicadores comerciais
+            Contas a receber — dados do Nomus (nomus_mirror)
           </p>
         </div>
-        <PeriodSelector selected={period} onChange={setPeriod} />
+        <EmpresaSelector selected={empresa} onChange={setEmpresa} />
       </div>
 
       {/* Error */}
@@ -332,14 +350,14 @@ export default function Vendas() {
         </div>
       )}
 
-      {/* Tabela de Sales Invoices */}
+      {/* Tabela de Títulos a Receber */}
       {loading ? (
         <TableSkeleton />
       ) : (
         <div className="bg-card rounded-xl border border-border overflow-hidden shadow-sm">
           <div className="flex items-center justify-between p-4 border-b border-border">
             <h3 className="text-sm font-semibold text-text-primary">
-              Sales Invoices em Aberto ({sorted.length})
+              Títulos a Receber em Aberto ({sorted.length})
             </h3>
             <div className="relative">
               <Search
@@ -348,7 +366,7 @@ export default function Vendas() {
               />
               <input
                 type="text"
-                placeholder="Buscar por cliente ou fatura..."
+                placeholder="Buscar por cliente, CNPJ ou NF..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-8 pr-3 py-1.5 text-xs border border-border rounded-lg bg-surface text-text-primary placeholder:text-text-secondary focus:outline-none focus:ring-1 focus:ring-primary w-72"
@@ -360,28 +378,29 @@ export default function Vendas() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-surface text-text-secondary text-xs uppercase tracking-wider">
-                  <th className="text-left px-4 py-3 font-medium">Fatura</th>
+                  <th className="text-left px-4 py-3 font-medium">Empresa</th>
                   <th
                     className="text-left px-4 py-3 font-medium cursor-pointer hover:text-text-primary select-none"
-                    onClick={() => handleSort("customer_name")}
+                    onClick={() => handleSort("cliente")}
                   >
                     <span className="flex items-center gap-1">
                       Cliente
                       <ArrowUpDown size={12} className="opacity-50" />
                     </span>
                   </th>
+                  <th className="text-left px-4 py-3 font-medium">Descrição</th>
                   <th
                     className="text-right px-4 py-3 font-medium cursor-pointer hover:text-text-primary select-none"
-                    onClick={() => handleSort("outstanding_amount")}
+                    onClick={() => handleSort("saldo")}
                   >
                     <span className="flex items-center justify-end gap-1">
-                      Valor em Aberto
+                      Saldo
                       <ArrowUpDown size={12} className="opacity-50" />
                     </span>
                   </th>
                   <th
                     className="text-left px-4 py-3 font-medium cursor-pointer hover:text-text-primary select-none"
-                    onClick={() => handleSort("due_date")}
+                    onClick={() => handleSort("vencimento")}
                   >
                     <span className="flex items-center gap-1">
                       Vencimento
@@ -392,27 +411,42 @@ export default function Vendas() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {sorted.slice(0, 100).map((inv) => {
-                  const days = daysOverdue(inv.due_date);
+                {sorted.slice(0, 100).map((t) => {
+                  const days = daysOverdue(t.vencimento);
                   const isOverdue = days > 0;
                   return (
                     <tr
-                      key={inv.name}
+                      key={t.id}
                       className="hover:bg-surface/50 transition-colors"
                     >
                       <td className="px-4 py-3">
-                        <div className="text-text-primary font-mono text-xs font-medium">
-                          {inv.name}
-                        </div>
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                            t.empresa === "ARAMESUL"
+                              ? "bg-blue-500/10 text-blue-600"
+                              : "bg-purple-500/10 text-purple-600"
+                          }`}
+                        >
+                          {t.empresa}
+                        </span>
                       </td>
-                      <td className="px-4 py-3 text-text-primary max-w-xs truncate">
-                        {inv.customer_name}
+                      <td className="px-4 py-3 text-text-primary max-w-xs">
+                        <div className="font-medium truncate">{t.cliente}</div>
+                        <div className="text-xs text-text-secondary">{t.cnpj}</div>
+                      </td>
+                      <td className="px-4 py-3 text-text-secondary text-xs max-w-xs truncate">
+                        {t.descricao}
+                        {t.nf_origem && (
+                          <span className="ml-1 text-text-secondary/70">
+                            (NF {t.nf_origem})
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-right font-mono text-text-primary">
-                        {formatBRL(inv.outstanding_amount)}
+                        {formatBRL(t.saldo)}
                       </td>
                       <td className="px-4 py-3 text-text-secondary text-xs">
-                        {formatDate(inv.due_date)}
+                        {formatDate(t.vencimento)}
                       </td>
                       <td className="px-4 py-3">
                         <span
@@ -431,10 +465,10 @@ export default function Vendas() {
                 {sorted.length === 0 && (
                   <tr>
                     <td
-                      colSpan={5}
+                      colSpan={6}
                       className="px-4 py-8 text-center text-text-secondary text-sm"
                     >
-                      Nenhuma fatura encontrada
+                      Nenhum título encontrado
                     </td>
                   </tr>
                 )}
@@ -444,7 +478,7 @@ export default function Vendas() {
 
           {sorted.length > 100 && (
             <div className="px-4 py-3 border-t border-border text-xs text-text-secondary text-center">
-              Exibindo 100 de {sorted.length} faturas. Use a busca para filtrar.
+              Exibindo 100 de {sorted.length} títulos. Use a busca para filtrar.
             </div>
           )}
         </div>
@@ -453,7 +487,7 @@ export default function Vendas() {
       {loading && (
         <div className="flex items-center justify-center gap-2 text-text-secondary text-sm py-4">
           <Loader2 size={16} className="animate-spin" />
-          <span>Buscando dados do ERPNext...</span>
+          <span>Buscando dados do Nomus...</span>
         </div>
       )}
     </div>
