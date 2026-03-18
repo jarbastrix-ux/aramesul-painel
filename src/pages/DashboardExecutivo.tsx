@@ -17,8 +17,19 @@ import {
   Clock,
   Factory,
   FileWarning,
+  BarChart3,
 } from "lucide-react";
-import { getList, getCount, erpnext1 } from "../lib/erpnext";
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+} from "recharts";
+import { getList, getCount } from "../lib/erpnext";
 
 // ---------------------------------------------------------------------------
 // Constantes
@@ -36,7 +47,15 @@ interface FinanceiroKPIs {
   faturamentoMes: number;
   aReceber: number;
   aPagar: number;
-  pedidosAbertos: number;
+  pedidosPendentes: number;
+}
+
+interface FaturamentoMes {
+  mes: string;
+  mesLabel: string;
+  aramesul: number;
+  arametrix: number;
+  total: number;
 }
 
 interface ProducaoKPIs {
@@ -82,6 +101,16 @@ function formatBRL(value: number): string {
   }).format(value);
 }
 
+function formatBRLCompact(value: number): string {
+  if (value >= 1_000_000) {
+    return `R$ ${(value / 1_000_000).toFixed(1)}M`;
+  }
+  if (value >= 1_000) {
+    return `R$ ${(value / 1_000).toFixed(0)}k`;
+  }
+  return formatBRL(value);
+}
+
 function formatNumber(value: number): string {
   return new Intl.NumberFormat("pt-BR").format(value);
 }
@@ -122,6 +151,26 @@ function statusLabel(status: string): string {
     default:
       return status;
   }
+}
+
+const MONTH_LABELS: Record<string, string> = {
+  "01": "Jan",
+  "02": "Fev",
+  "03": "Mar",
+  "04": "Abr",
+  "05": "Mai",
+  "06": "Jun",
+  "07": "Jul",
+  "08": "Ago",
+  "09": "Set",
+  "10": "Out",
+  "11": "Nov",
+  "12": "Dez",
+};
+
+function mesLabel(mes: string): string {
+  const [year, month] = mes.split("-");
+  return `${MONTH_LABELS[month] || month}/${year.slice(2)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -289,11 +338,47 @@ function OEEMiniGauge({ value }: { value: number }) {
 }
 
 // ---------------------------------------------------------------------------
+// Recharts Custom Tooltip
+// ---------------------------------------------------------------------------
+
+function FaturamentoTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ value: number; name: string; color: string }>;
+  label?: string;
+}) {
+  if (!active || !payload) return null;
+  return (
+    <div className="bg-card border border-border rounded-lg p-3 shadow-lg text-sm">
+      <p className="font-medium text-text-primary mb-1.5">{label}</p>
+      {payload.map((entry) => (
+        <div key={entry.name} className="flex items-center gap-2">
+          <span
+            className="w-2.5 h-2.5 rounded-full"
+            style={{ backgroundColor: entry.color }}
+          />
+          <span className="text-text-secondary">{entry.name}:</span>
+          <span className="font-medium text-text-primary">
+            {formatBRL(entry.value)}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Página Dashboard Executivo
 // ---------------------------------------------------------------------------
 
 export default function DashboardExecutivo() {
   const [financeiro, setFinanceiro] = useState<FinanceiroKPIs | null>(null);
+  const [faturamentoHistorico, setFaturamentoHistorico] = useState<
+    FaturamentoMes[]
+  >([]);
   const [producao, setProducao] = useState<ProducaoKPIs | null>(null);
   const [frota, setFrota] = useState<FrotaKPIs | null>(null);
   const [workOrders, setWorkOrders] = useState<WorkOrderRow[]>([]);
@@ -307,24 +392,44 @@ export default function DashboardExecutivo() {
     setError(null);
 
     try {
-      // ---- Financeiro (API nomus_mirror + ERPNext1 para pedidos) ----
-      const now = new Date();
-
-      const [financeiroRes, pedidosAbertos] = await Promise.all([
+      // ---- Financeiro (API nomus_mirror) ----
+      const [financeiroRes, pedidosRes, historicoRes] = await Promise.all([
         fetch(`${FINANCEIRO_API}/resumo`)
           .then((r) => (r.ok ? r.json() : null))
           .catch(() => null),
-        erpnext1.getCount("Sales Order", [
-          ["docstatus", "=", 1],
-          ["status", "not in", "Completed,Cancelled,Closed"],
-        ]).catch(() => 0),
+        fetch(`${FINANCEIRO_API}/pedidos`)
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
+        fetch(`${FINANCEIRO_API}/faturamento/historico`)
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
       ]);
 
       const faturamentoMes = financeiroRes?.faturamento_mes ?? 0;
       const aReceber = financeiroRes?.cr_aberto_total ?? 0;
       const aPagar = financeiroRes?.cp_aberto_total ?? 0;
+      const pedidosPendentes = pedidosRes?.pendentes ?? 0;
 
-      setFinanceiro({ faturamentoMes, aReceber, aPagar, pedidosAbertos });
+      setFinanceiro({ faturamentoMes, aReceber, aPagar, pedidosPendentes });
+
+      // Histórico de faturamento
+      if (historicoRes?.meses) {
+        const chartData: FaturamentoMes[] = historicoRes.meses.map(
+          (m: {
+            mes: string;
+            aramesul: number;
+            arametrix: number;
+            total: number;
+          }) => ({
+            mes: m.mes,
+            mesLabel: mesLabel(m.mes),
+            aramesul: m.aramesul,
+            arametrix: m.arametrix,
+            total: m.total,
+          })
+        );
+        setFaturamentoHistorico(chartData);
+      }
 
       // ---- Produção (OEE API) ----
       let producaoData: ProducaoKPIs | null = null;
@@ -348,7 +453,9 @@ export default function DashboardExecutivo() {
             melhorMaquina: melhorRec?.recurso ?? "N/A",
             melhorOEE: melhorRec?.oee_medio ?? 0,
             principalParada: principalPar?.atividade ?? "N/A",
-            principalParadaHoras: principalPar?.horas_total ?? 0,
+            principalParadaHoras: principalPar
+              ? principalPar.total_horas ?? 0
+              : 0,
           };
         }
       } catch {
@@ -357,6 +464,7 @@ export default function DashboardExecutivo() {
       setProducao(producaoData);
 
       // ---- Frota (ERPNext2) ----
+      const now = new Date();
       const today = now.toISOString().split("T")[0];
       const [totalVehicles, totalDrivers, tripsToday] = await Promise.all([
         getCount("Vehicle", []).catch(() => 0),
@@ -396,7 +504,6 @@ export default function DashboardExecutivo() {
       // ---- Alertas ----
       const newAlertas: Alerta[] = [];
 
-      // CR vencidas — usa cr_titulos da API nomus_mirror
       const crTitulos = financeiroRes?.cr_titulos ?? 0;
       const crVencidas = crTitulos > 100 ? Math.round(crTitulos * 0.1) : 0;
 
@@ -409,7 +516,6 @@ export default function DashboardExecutivo() {
         });
       }
 
-      // WOs atrasadas (planned_start_date < hoje e status Not Started)
       const wosAtrasadas = await getCount("Work Order", [
         ["status", "=", "Not Started"],
         ["planned_start_date", "<", today],
@@ -425,7 +531,6 @@ export default function DashboardExecutivo() {
         });
       }
 
-      // OEE abaixo de 30%
       if (producaoData && producaoData.oeeMedio < 30 && producaoData.oeeMedio > 0) {
         newAlertas.push({
           tipo: "warning",
@@ -552,16 +657,94 @@ export default function DashboardExecutivo() {
               trend="down"
             />
             <KPICard
-              label="Pedidos Abertos"
-              value={formatNumber(financeiro.pedidosAbertos)}
-              subtitle="Aguardando processamento"
+              label="Pedidos Pendentes"
+              value={formatNumber(financeiro.pedidosPendentes)}
+              subtitle="Nomus — sem NF-e vinculada"
               icon={<ShoppingBag size={22} />}
               color="#F59E0B"
-              trend={financeiro.pedidosAbertos > 10 ? "down" : "neutral"}
+              trend={financeiro.pedidosPendentes > 100 ? "down" : "neutral"}
             />
           </div>
         ) : null}
       </section>
+
+      {/* ================================================================ */}
+      {/* SEÇÃO 1.5 — Gráfico de Evolução do Faturamento */}
+      {/* ================================================================ */}
+      {!loading && faturamentoHistorico.length > 0 && (
+        <section>
+          <SectionTitle
+            icon={<BarChart3 size={20} />}
+            title="Evolução do Faturamento (12 meses)"
+          />
+          <div className="bg-card rounded-xl border border-border p-5 shadow-sm">
+            <ResponsiveContainer width="100%" height={320}>
+              <LineChart
+                data={faturamentoHistorico}
+                margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
+              >
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke="var(--color-border, #e5e7eb)"
+                  opacity={0.5}
+                />
+                <XAxis
+                  dataKey="mesLabel"
+                  tick={{ fontSize: 12, fill: "var(--color-text-secondary, #6b7280)" }}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <YAxis
+                  tickFormatter={(v: number) => formatBRLCompact(v)}
+                  tick={{ fontSize: 11, fill: "var(--color-text-secondary, #6b7280)" }}
+                  tickLine={false}
+                  axisLine={false}
+                  width={70}
+                />
+                <Tooltip
+                  content={<FaturamentoTooltip />}
+                />
+                <Legend
+                  verticalAlign="top"
+                  height={36}
+                  iconType="circle"
+                  iconSize={8}
+                  formatter={(value: string) => (
+                    <span className="text-xs text-text-secondary">{value}</span>
+                  )}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="aramesul"
+                  name="Aramesul"
+                  stroke="#3B82F6"
+                  strokeWidth={2.5}
+                  dot={{ r: 3, fill: "#3B82F6" }}
+                  activeDot={{ r: 5 }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="arametrix"
+                  name="Arametrix"
+                  stroke="#8B5CF6"
+                  strokeWidth={2.5}
+                  dot={{ r: 3, fill: "#8B5CF6" }}
+                  activeDot={{ r: 5 }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="total"
+                  name="Total"
+                  stroke="#10B981"
+                  strokeWidth={2}
+                  strokeDasharray="5 5"
+                  dot={false}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </section>
+      )}
 
       {/* ================================================================ */}
       {/* SEÇÃO 2 — KPIs Produção */}
@@ -739,7 +922,6 @@ export default function DashboardExecutivo() {
                             )
                           : "—"}
                       </td>
-
                     </tr>
                   ))}
                 </tbody>
@@ -790,7 +972,7 @@ export default function DashboardExecutivo() {
       {/* Auto-refresh indicator */}
       {!loading && (
         <div className="text-center text-xs text-text-secondary pb-4">
-          Atualização automática a cada 5 minutos
+          Atualização automática a cada 5 minutos — dados financeiros do Nomus
         </div>
       )}
     </div>
