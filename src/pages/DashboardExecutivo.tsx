@@ -405,7 +405,7 @@ export default function DashboardExecutivo() {
           .catch(() => null),
       ]);
 
-      const faturamentoMes = financeiroRes?.faturamento_mes ?? 0;
+      const faturamentoMes = financeiroRes?.faturamento_mes_total ?? financeiroRes?.faturamento_mes ?? 0;
       const aReceber = financeiroRes?.cr_aberto_total ?? 0;
       const aPagar = financeiroRes?.cp_aberto_total ?? 0;
       const pedidosPendentes = pedidosRes?.pendentes ?? 0;
@@ -635,7 +635,7 @@ export default function DashboardExecutivo() {
             <KPICard
               label="Faturamento Mês"
               value={formatBRL(financeiro.faturamentoMes)}
-              subtitle="Nomus — NF-es autorizadas no mês"
+              subtitle="Nomus — Docs de Saída (vendas + remessas)"
               icon={<TrendingUp size={22} />}
               color="#10B981"
               trend="up"
