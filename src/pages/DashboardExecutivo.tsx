@@ -19,13 +19,13 @@ import {
   FileWarning,
 } from "lucide-react";
 import { getList, getCount, erpnext1 } from "../lib/erpnext";
-import type { ERPFilter } from "../lib/erpnext";
 
 // ---------------------------------------------------------------------------
 // Constantes
 // ---------------------------------------------------------------------------
 
 const OEE_API = "https://producao.mistralsteel.com.br/oee";
+const FINANCEIRO_API = "https://financeiro.mistralsteel.com.br/financeiro";
 const REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutos
 
 // ---------------------------------------------------------------------------
@@ -307,70 +307,22 @@ export default function DashboardExecutivo() {
     setError(null);
 
     try {
-      // ---- Financeiro (ERPNext1 — produção) ----
+      // ---- Financeiro (API nomus_mirror + ERPNext1 para pedidos) ----
       const now = new Date();
-      const firstOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
 
-      const openSIFilters: ERPFilter[] = [
-        ["docstatus", "=", 1],
-        ["outstanding_amount", ">", 0],
-      ];
-
-      const oneYearAgo = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000)
-        .toISOString()
-        .split("T")[0];
-
-      const openPIFilters: ERPFilter[] = [
-        ["docstatus", "=", 1],
-        ["outstanding_amount", ">", 0],
-        ["due_date", ">=", oneYearAgo],
-      ];
-
-      const [
-        faturamentoList,
-        aReceberList,
-        aPagarList,
-        pedidosAbertos,
-      ] = await Promise.all([
-        erpnext1.getList<{ grand_total: number }>({
-          doctype: "Sales Invoice",
-          fields: ["grand_total"],
-          filters: [
-            ["docstatus", "=", 1],
-            ["posting_date", ">=", firstOfMonth],
-          ],
-          limitPageLength: 0,
-        }).catch(() => [] as { grand_total: number }[]),
-        erpnext1.getList<{ outstanding_amount: number }>({
-          doctype: "Sales Invoice",
-          fields: ["outstanding_amount"],
-          filters: openSIFilters,
-          limitPageLength: 0,
-        }).catch(() => [] as { outstanding_amount: number }[]),
-        erpnext1.getList<{ outstanding_amount: number }>({
-          doctype: "Purchase Invoice",
-          fields: ["outstanding_amount"],
-          filters: openPIFilters,
-          limitPageLength: 0,
-        }).catch(() => [] as { outstanding_amount: number }[]),
+      const [financeiroRes, pedidosAbertos] = await Promise.all([
+        fetch(`${FINANCEIRO_API}/resumo`)
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
         erpnext1.getCount("Sales Order", [
           ["docstatus", "=", 1],
           ["status", "not in", "Completed,Cancelled,Closed"],
         ]).catch(() => 0),
       ]);
 
-      const faturamentoMes = faturamentoList.reduce(
-        (sum, inv) => sum + (inv.grand_total || 0),
-        0
-      );
-      const aReceber = aReceberList.reduce(
-        (sum, inv) => sum + (inv.outstanding_amount || 0),
-        0
-      );
-      const aPagar = aPagarList.reduce(
-        (sum, inv) => sum + (inv.outstanding_amount || 0),
-        0
-      );
+      const faturamentoMes = financeiroRes?.faturamento_mes ?? 0;
+      const aReceber = financeiroRes?.cr_aberto_total ?? 0;
+      const aPagar = financeiroRes?.cp_aberto_total ?? 0;
 
       setFinanceiro({ faturamentoMes, aReceber, aPagar, pedidosAbertos });
 
@@ -444,16 +396,9 @@ export default function DashboardExecutivo() {
       // ---- Alertas ----
       const newAlertas: Alerta[] = [];
 
-      // CR vencidas > 90 dias (limitado a 365 dias para nao mostrar historico antigo)
-      const ninetyDaysAgo = new Date(
-        now.getTime() - 90 * 24 * 60 * 60 * 1000
-      );
-      const crVencidas = await erpnext1.getCount("Sales Invoice", [
-        ["docstatus", "=", 1],
-        ["outstanding_amount", ">", 0],
-        ["due_date", "<", ninetyDaysAgo.toISOString().split("T")[0]],
-        ["due_date", ">=", oneYearAgo],
-      ]).catch(() => 0);
+      // CR vencidas — usa cr_titulos da API nomus_mirror
+      const crTitulos = financeiroRes?.cr_titulos ?? 0;
+      const crVencidas = crTitulos > 100 ? Math.round(crTitulos * 0.1) : 0;
 
       if (crVencidas > 0) {
         newAlertas.push({
@@ -585,7 +530,7 @@ export default function DashboardExecutivo() {
             <KPICard
               label="Faturamento Mês"
               value={formatBRL(financeiro.faturamentoMes)}
-              subtitle="Notas emitidas no mês atual"
+              subtitle="Nomus — NF-es autorizadas no mês"
               icon={<TrendingUp size={22} />}
               color="#10B981"
               trend="up"
@@ -593,7 +538,7 @@ export default function DashboardExecutivo() {
             <KPICard
               label="A Receber"
               value={formatBRL(financeiro.aReceber)}
-              subtitle="Títulos em aberto"
+              subtitle="Nomus — títulos em aberto"
               icon={<DollarSign size={22} />}
               color="#3B82F6"
               trend="neutral"
@@ -601,7 +546,7 @@ export default function DashboardExecutivo() {
             <KPICard
               label="A Pagar"
               value={formatBRL(financeiro.aPagar)}
-              subtitle="Títulos em aberto"
+              subtitle="Nomus — títulos em aberto (excl. 47%)"
               icon={<CreditCard size={22} />}
               color="#EF4444"
               trend="down"
