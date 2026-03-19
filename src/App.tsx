@@ -8,6 +8,7 @@ import Relatorios from "./pages/Relatorios";
 import ContasReceber from "./pages/ContasReceber";
 import OEE from "./pages/OEE";
 import DashboardExecutivo from "./pages/DashboardExecutivo";
+import DRE from "./pages/DRE";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -42,6 +43,7 @@ export default function App() {
             <Route path="/compras" element={<Compras />} />
             <Route path="/contas-receber" element={<ContasReceber />} />
             <Route path="/oee" element={<OEE />} />
+            <Route path="/dre" element={<DRE />} />
             <Route path="/relatorios" element={<Relatorios />} />
           </Route>
         </Routes>

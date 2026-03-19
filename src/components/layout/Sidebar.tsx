@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Gauge,
+  TrendingUp,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -47,6 +48,11 @@ const navItems: NavItem[] = [
     label: "OEE Produção",
     path: "/oee",
     icon: <Gauge size={20} />,
+  },
+  {
+    label: "DRE",
+    path: "/dre",
+    icon: <TrendingUp size={20} />,
   },
   {
     label: "Relatórios",
