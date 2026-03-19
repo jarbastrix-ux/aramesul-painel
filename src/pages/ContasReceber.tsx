@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
   DollarSign,
   AlertTriangle,
@@ -8,21 +8,42 @@ import {
   AlertCircle,
   Search,
   ArrowUpDown,
+  RefreshCw,
+  Building2,
 } from "lucide-react";
-import { erpnext1 } from "../lib/erpnext";
 
 // ---------------------------------------------------------------------------
 // Tipos
 // ---------------------------------------------------------------------------
 
-interface SalesInvoice {
-  name: string;
-  customer_name: string;
-  posting_date: string;
-  due_date: string;
-  grand_total: number;
-  outstanding_amount: number;
-  status: string;
+interface Titulo {
+  id: number;
+  empresa: string;
+  cliente: string;
+  cnpj: string;
+  valor: number;
+  saldo: number;
+  vencimento: string; // "YYYY-MM-DD"
+  classificacao: string;
+  forma_pagamento: string;
+  descricao: string;
+  nf_origem: string | null;
+}
+
+interface CRResponse {
+  total: number;
+  limit: number;
+  offset: number;
+  titulos: Titulo[];
+  _cache: boolean;
+}
+
+interface ResumoResponse {
+  cr_aberto_total: number;
+  cr_aberto_aramesul: number;
+  cr_aberto_arametrix: number;
+  cr_titulos: number;
+  [key: string]: unknown;
 }
 
 interface KPIData {
@@ -33,8 +54,16 @@ interface KPIData {
   color: string;
 }
 
-type SortField = "customer_name" | "due_date" | "outstanding_amount";
+type SortField = "cliente" | "vencimento" | "saldo" | "empresa";
 type SortDir = "asc" | "desc";
+type Empresa = "Todos" | "ARAMESUL" | "ARAMETRIX";
+
+// ---------------------------------------------------------------------------
+// Constantes
+// ---------------------------------------------------------------------------
+
+const API_BASE = "https://financeiro.mistralsteel.com.br/financeiro";
+const PAGE_SIZE = 200;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -57,19 +86,13 @@ function daysOverdue(dueDate: string): number {
   const due = new Date(dueDate + "T00:00:00");
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const diff = Math.floor((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
-  return diff;
+  return Math.floor(
+    (today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24)
+  );
 }
 
-function getStatusBadge(status: string, dueDate: string) {
+function getStatusBadge(dueDate: string) {
   const overdue = daysOverdue(dueDate);
-  if (status === "Paid" || status === "Return") {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-success/10 text-success">
-        <CheckCircle size={12} /> Pago
-      </span>
-    );
-  }
   if (overdue > 0) {
     return (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-danger/10 text-danger">
@@ -77,11 +100,23 @@ function getStatusBadge(status: string, dueDate: string) {
       </span>
     );
   }
+  if (overdue === 0) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-warning/10 text-warning">
+        <Clock size={12} /> Vence hoje
+      </span>
+    );
+  }
   return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-warning/10 text-warning">
-      <Clock size={12} /> A vencer
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-success/10 text-success">
+      <CheckCircle size={12} /> A vencer
     </span>
   );
+}
+
+function formatCNPJ(cnpj: string | null): string {
+  if (!cnpj) return "—";
+  return cnpj;
 }
 
 // ---------------------------------------------------------------------------
@@ -130,12 +165,13 @@ function TableSkeleton() {
         <div className="h-5 w-40 bg-border rounded" />
       </div>
       <div className="divide-y divide-border">
-        {Array.from({ length: 5 }).map((_, i) => (
+        {Array.from({ length: 8 }).map((_, i) => (
           <div key={i} className="flex gap-4 p-4">
+            <div className="h-4 w-1/6 bg-border rounded" />
             <div className="h-4 w-1/4 bg-border rounded" />
+            <div className="h-4 w-1/8 bg-border rounded" />
             <div className="h-4 w-1/6 bg-border rounded" />
-            <div className="h-4 w-1/6 bg-border rounded" />
-            <div className="h-4 w-1/6 bg-border rounded" />
+            <div className="h-4 w-1/8 bg-border rounded" />
             <div className="h-4 w-1/8 bg-border rounded" />
           </div>
         ))}
@@ -148,16 +184,16 @@ function TableSkeleton() {
 // Aging Bar
 // ---------------------------------------------------------------------------
 
-function AgingBar({ invoices }: { invoices: SalesInvoice[] }) {
+function AgingBar({ titulos }: { titulos: Titulo[] }) {
   const buckets = { current: 0, "1-30": 0, "31-60": 0, "61-90": 0, "90+": 0 };
-  
-  invoices.forEach((inv) => {
-    const days = daysOverdue(inv.due_date);
-    if (days <= 0) buckets.current += inv.outstanding_amount;
-    else if (days <= 30) buckets["1-30"] += inv.outstanding_amount;
-    else if (days <= 60) buckets["31-60"] += inv.outstanding_amount;
-    else if (days <= 90) buckets["61-90"] += inv.outstanding_amount;
-    else buckets["90+"] += inv.outstanding_amount;
+
+  titulos.forEach((t) => {
+    const days = daysOverdue(t.vencimento);
+    if (days <= 0) buckets.current += t.saldo;
+    else if (days <= 30) buckets["1-30"] += t.saldo;
+    else if (days <= 60) buckets["31-60"] += t.saldo;
+    else if (days <= 90) buckets["61-90"] += t.saldo;
+    else buckets["90+"] += t.saldo;
   });
 
   const total = Object.values(buckets).reduce((a, b) => a + b, 0);
@@ -184,7 +220,7 @@ function AgingBar({ invoices }: { invoices: SalesInvoice[] }) {
       <h3 className="text-sm font-semibold text-text-primary mb-4">
         Aging Analysis
       </h3>
-      
+
       {/* Bar */}
       <div className="flex h-4 rounded-full overflow-hidden mb-4">
         {(Object.keys(buckets) as Array<keyof typeof buckets>).map((key) => {
@@ -227,107 +263,127 @@ function AgingBar({ invoices }: { invoices: SalesInvoice[] }) {
 // ---------------------------------------------------------------------------
 
 export default function ContasReceber() {
-  const [invoices, setInvoices] = useState<SalesInvoice[]>([]);
-  const [kpis, setKpis] = useState<KPIData[]>([]);
+  const [titulos, setTitulos] = useState<Titulo[]>([]);
+  const [totalTitulos, setTotalTitulos] = useState(0);
+  const [resumo, setResumo] = useState<ResumoResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [sortField, setSortField] = useState<SortField>("due_date");
+  const [sortField, setSortField] = useState<SortField>("vencimento");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [empresa, setEmpresa] = useState<Empresa>("Todos");
+  const [offset, setOffset] = useState(0);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const empresaParam =
+        empresa === "Todos" ? "Todos" : empresa;
+
+      const [crRes, resumoRes] = await Promise.all([
+        fetch(
+          `${API_BASE}/cr?empresa=${empresaParam}&limit=${PAGE_SIZE}&offset=${offset}`
+        ).then((r) => {
+          if (!r.ok) throw new Error(`API retornou ${r.status}`);
+          return r.json() as Promise<CRResponse>;
+        }),
+        fetch(`${API_BASE}/resumo`).then((r) => {
+          if (!r.ok) throw new Error(`API resumo retornou ${r.status}`);
+          return r.json() as Promise<ResumoResponse>;
+        }),
+      ]);
+
+      setTitulos(crRes.titulos);
+      setTotalTitulos(crRes.total);
+      setResumo(resumoRes);
+    } catch (err) {
+      console.error("[ContasReceber] Erro ao buscar dados:", err);
+      setError(
+        err instanceof Error ? err.message : "Erro ao conectar com a API"
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [empresa, offset]);
 
   useEffect(() => {
-    async function fetchData() {
-      setLoading(true);
-      setError(null);
+    fetchData();
+  }, [fetchData]);
 
-      try {
-        const [totalInvoices, invoiceList] = await Promise.all([
-          erpnext1.getCount("Sales Invoice", [["docstatus", "=", 1]]).catch(() => 0),
-          erpnext1.getList<SalesInvoice>({
-            doctype: "Sales Invoice",
-            fields: [
-              "name",
-              "customer_name",
-              "posting_date",
-              "due_date",
-              "grand_total",
-              "outstanding_amount",
-              "status",
-            ],
-            filters: [
-              ["docstatus", "=", 1],
-              ["outstanding_amount", ">", 0],
-            ],
-            orderBy: "due_date asc",
-            limitPageLength: 100,
-          }).catch(() => [] as SalesInvoice[]),
-        ]);
+  // Reset offset when empresa changes
+  useEffect(() => {
+    setOffset(0);
+  }, [empresa]);
 
-        const totalOutstanding = invoiceList.reduce(
-          (sum, inv) => sum + inv.outstanding_amount,
-          0
-        );
-        const overdueInvoices = invoiceList.filter(
-          (inv) => daysOverdue(inv.due_date) > 0
-        );
-        const overdueTotal = overdueInvoices.reduce(
-          (sum, inv) => sum + inv.outstanding_amount,
-          0
-        );
+  // Compute KPIs from loaded titulos
+  const kpis: KPIData[] = (() => {
+    if (!resumo) return [];
 
-        setKpis([
-          {
-            label: "Total em Aberto",
-            value: formatBRL(totalOutstanding),
-            subtitle: `${totalInvoices} faturas submetidas`,
-            icon: <DollarSign size={22} />,
-            color: "#3B82F6",
-          },
-          {
-            label: "Vencidas",
-            value: formatBRL(overdueTotal),
-            subtitle: `${overdueInvoices.length} faturas em atraso`,
-            icon: <AlertTriangle size={22} />,
-            color: "#EF4444",
-          },
-          {
-            label: "A Vencer",
-            value: formatBRL(totalOutstanding - overdueTotal),
-            subtitle: `${invoiceList.length - overdueInvoices.length} faturas`,
-            icon: <Clock size={22} />,
-            color: "#10B981",
-          },
-        ]);
+    let totalAberto: number;
+    let subtitleTotal: string;
 
-        setInvoices(invoiceList);
-      } catch (err) {
-        console.error("[ContasReceber] Erro ao buscar dados:", err);
-        setError(
-          err instanceof Error ? err.message : "Erro ao conectar com ERPNext"
-        );
-      } finally {
-        setLoading(false);
-      }
+    if (empresa === "ARAMESUL") {
+      totalAberto = resumo.cr_aberto_aramesul;
+      subtitleTotal = `${totalTitulos} titulos em aberto`;
+    } else if (empresa === "ARAMETRIX") {
+      totalAberto = resumo.cr_aberto_arametrix;
+      subtitleTotal = `${totalTitulos} titulos em aberto`;
+    } else {
+      totalAberto = resumo.cr_aberto_total;
+      subtitleTotal = `${totalTitulos} titulos em aberto`;
     }
 
-    fetchData();
-  }, []);
+    const overdueItems = titulos.filter((t) => daysOverdue(t.vencimento) > 0);
+    const overdueTotal = overdueItems.reduce((s, t) => s + t.saldo, 0);
+    const toExpireItems = titulos.filter((t) => daysOverdue(t.vencimento) <= 0);
+    const toExpireTotal = toExpireItems.reduce((s, t) => s + t.saldo, 0);
+
+    return [
+      {
+        label: "Total em Aberto",
+        value: formatBRL(totalAberto),
+        subtitle: subtitleTotal,
+        icon: <DollarSign size={22} />,
+        color: "#3B82F6",
+      },
+      {
+        label: "Vencidas",
+        value: formatBRL(overdueTotal),
+        subtitle: `${overdueItems.length} titulos em atraso`,
+        icon: <AlertTriangle size={22} />,
+        color: "#EF4444",
+      },
+      {
+        label: "A Vencer",
+        value: formatBRL(toExpireTotal),
+        subtitle: `${toExpireItems.length} titulos a vencer`,
+        icon: <Clock size={22} />,
+        color: "#10B981",
+      },
+    ];
+  })();
 
   // Filter and sort
-  const filtered = invoices
+  const filtered = titulos
     .filter(
-      (inv) =>
-        inv.customer_name?.toLowerCase().includes(search.toLowerCase()) ||
-        inv.name?.toLowerCase().includes(search.toLowerCase())
+      (t) =>
+        t.cliente?.toLowerCase().includes(search.toLowerCase()) ||
+        t.cnpj?.toLowerCase().includes(search.toLowerCase()) ||
+        t.descricao?.toLowerCase().includes(search.toLowerCase()) ||
+        t.nf_origem?.toLowerCase().includes(search.toLowerCase())
     )
     .sort((a, b) => {
       let cmp = 0;
-      if (sortField === "customer_name") {
-        cmp = (a.customer_name || "").localeCompare(b.customer_name || "");
-      } else if (sortField === "due_date") {
-        cmp = (a.due_date || "").localeCompare(b.due_date || "");
-      } else if (sortField === "outstanding_amount") {
-        cmp = a.outstanding_amount - b.outstanding_amount;
+      if (sortField === "cliente") {
+        cmp = (a.cliente || "").localeCompare(b.cliente || "");
+      } else if (sortField === "vencimento") {
+        cmp = (a.vencimento || "").localeCompare(b.vencimento || "");
+      } else if (sortField === "saldo") {
+        cmp = a.saldo - b.saldo;
+      } else if (sortField === "empresa") {
+        cmp = (a.empresa || "").localeCompare(b.empresa || "");
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
@@ -341,14 +397,47 @@ export default function ContasReceber() {
     }
   }
 
+  const totalPages = Math.ceil(totalTitulos / PAGE_SIZE);
+  const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-text-primary">Contas a Receber</h1>
-        <p className="text-sm text-text-secondary mt-1">
-          Faturas em aberto e aging analysis
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-text-primary">
+            Contas a Receber
+          </h1>
+          <p className="text-sm text-text-secondary mt-1">
+            Titulos em aberto e aging analysis — Fonte: Nomus
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          {/* Filtro Empresa */}
+          <div className="flex items-center gap-2">
+            <Building2 size={16} className="text-text-secondary" />
+            <select
+              value={empresa}
+              onChange={(e) => setEmpresa(e.target.value as Empresa)}
+              className="text-sm border border-border rounded-lg px-3 py-1.5 bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            >
+              <option value="Todos">Consolidado</option>
+              <option value="ARAMESUL">ARAMESUL</option>
+              <option value="ARAMETRIX">ARAMETRIX</option>
+            </select>
+          </div>
+
+          {/* Atualizar */}
+          <button
+            onClick={() => fetchData()}
+            disabled={loading}
+            className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-border bg-surface text-text-secondary hover:bg-card hover:text-text-primary transition-colors disabled:opacity-50"
+          >
+            <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+            Atualizar
+          </button>
+        </div>
       </div>
 
       {/* Error */}
@@ -363,7 +452,7 @@ export default function ContasReceber() {
       )}
 
       {/* KPIs */}
-      {loading ? (
+      {loading && !resumo ? (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <KPICardSkeleton />
           <KPICardSkeleton />
@@ -378,17 +467,21 @@ export default function ContasReceber() {
       )}
 
       {/* Aging Bar */}
-      {!loading && invoices.length > 0 && <AgingBar invoices={invoices} />}
+      {!loading && titulos.length > 0 && <AgingBar titulos={titulos} />}
 
-      {/* Tabela de Faturas */}
-      {loading ? (
+      {/* Tabela de Titulos */}
+      {loading && titulos.length === 0 ? (
         <TableSkeleton />
       ) : (
         <div className="bg-card rounded-xl border border-border overflow-hidden shadow-sm">
           {/* Table header */}
           <div className="flex items-center justify-between p-4 border-b border-border">
             <h3 className="text-sm font-semibold text-text-primary">
-              Faturas em Aberto ({filtered.length})
+              Titulos em Aberto ({filtered.length}
+              {totalTitulos > PAGE_SIZE
+                ? ` de ${totalTitulos}`
+                : ""}
+              )
             </h3>
             <div className="relative">
               <Search
@@ -397,7 +490,7 @@ export default function ContasReceber() {
               />
               <input
                 type="text"
-                placeholder="Buscar por cliente ou fatura..."
+                placeholder="Buscar por cliente, CNPJ, NF..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-8 pr-3 py-1.5 text-xs border border-border rounded-lg bg-surface text-text-primary placeholder:text-text-secondary focus:outline-none focus:ring-1 focus:ring-primary w-72"
@@ -410,70 +503,94 @@ export default function ContasReceber() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-surface text-text-secondary text-xs uppercase tracking-wider">
-                  <th className="text-left px-4 py-3 font-medium">Fatura</th>
                   <th
                     className="text-left px-4 py-3 font-medium cursor-pointer hover:text-text-primary"
-                    onClick={() => toggleSort("customer_name")}
+                    onClick={() => toggleSort("empresa")}
+                  >
+                    <span className="inline-flex items-center gap-1">
+                      Empresa <ArrowUpDown size={12} />
+                    </span>
+                  </th>
+                  <th
+                    className="text-left px-4 py-3 font-medium cursor-pointer hover:text-text-primary"
+                    onClick={() => toggleSort("cliente")}
                   >
                     <span className="inline-flex items-center gap-1">
                       Cliente <ArrowUpDown size={12} />
                     </span>
                   </th>
-                  <th className="text-left px-4 py-3 font-medium">Emissao</th>
+                  <th className="text-left px-4 py-3 font-medium">CNPJ</th>
+                  <th className="text-left px-4 py-3 font-medium">
+                    Descricao
+                  </th>
+                  <th
+                    className="text-right px-4 py-3 font-medium cursor-pointer hover:text-text-primary"
+                    onClick={() => toggleSort("saldo")}
+                  >
+                    <span className="inline-flex items-center gap-1 justify-end">
+                      Saldo <ArrowUpDown size={12} />
+                    </span>
+                  </th>
                   <th
                     className="text-left px-4 py-3 font-medium cursor-pointer hover:text-text-primary"
-                    onClick={() => toggleSort("due_date")}
+                    onClick={() => toggleSort("vencimento")}
                   >
                     <span className="inline-flex items-center gap-1">
                       Vencimento <ArrowUpDown size={12} />
                     </span>
                   </th>
-                  <th
-                    className="text-right px-4 py-3 font-medium cursor-pointer hover:text-text-primary"
-                    onClick={() => toggleSort("outstanding_amount")}
-                  >
-                    <span className="inline-flex items-center gap-1">
-                      Valor <ArrowUpDown size={12} />
-                    </span>
-                  </th>
                   <th className="text-center px-4 py-3 font-medium">Status</th>
-
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {filtered.map((inv) => (
+                {filtered.map((t) => (
                   <tr
-                    key={inv.name}
+                    key={t.id}
                     className="hover:bg-surface/50 transition-colors"
                   >
-                    <td className="px-4 py-3 text-text-primary font-mono text-xs">
-                      {inv.name}
-                    </td>
-                    <td className="px-4 py-3 text-text-primary font-medium max-w-xs truncate">
-                      {inv.customer_name}
-                    </td>
                     <td className="px-4 py-3 text-text-secondary text-xs">
-                      {formatDate(inv.posting_date)}
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                          t.empresa === "ARAMESUL"
+                            ? "bg-primary/10 text-primary"
+                            : "bg-accent/10 text-accent"
+                        }`}
+                      >
+                        {t.empresa === "ARAMESUL" ? "ARA" : "ATX"}
+                      </span>
                     </td>
-                    <td className="px-4 py-3 text-text-secondary text-xs">
-                      {formatDate(inv.due_date)}
+                    <td className="px-4 py-3 text-text-primary font-medium max-w-[200px] truncate">
+                      {t.cliente}
+                    </td>
+                    <td className="px-4 py-3 text-text-secondary text-xs font-mono">
+                      {formatCNPJ(t.cnpj)}
+                    </td>
+                    <td className="px-4 py-3 text-text-secondary text-xs max-w-[180px] truncate">
+                      {t.descricao}
+                      {t.nf_origem && (
+                        <span className="ml-1 text-primary/70">
+                          NF {t.nf_origem}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-right font-mono text-text-primary font-medium">
-                      {formatBRL(inv.outstanding_amount)}
+                      {formatBRL(t.saldo)}
+                    </td>
+                    <td className="px-4 py-3 text-text-secondary text-xs">
+                      {formatDate(t.vencimento)}
                     </td>
                     <td className="px-4 py-3 text-center">
-                      {getStatusBadge(inv.status, inv.due_date)}
+                      {getStatusBadge(t.vencimento)}
                     </td>
-
                   </tr>
                 ))}
                 {filtered.length === 0 && (
                   <tr>
                     <td
-                      colSpan={6}
+                      colSpan={7}
                       className="px-4 py-8 text-center text-text-secondary text-sm"
                     >
-                      Nenhuma fatura encontrada
+                      Nenhum titulo encontrado
                     </td>
                   </tr>
                 )}
@@ -481,14 +598,48 @@ export default function ContasReceber() {
             </table>
           </div>
 
-          {/* Footer */}
+          {/* Footer with pagination */}
           <div className="flex items-center justify-between p-4 border-t border-border bg-surface/50">
             <span className="text-xs text-text-secondary">
-              Mostrando {filtered.length} de {invoices.length} faturas
+              Mostrando {filtered.length} de {totalTitulos} titulos
+              {empresa !== "Todos" && ` (${empresa})`}
             </span>
-            <span className="text-sm font-semibold text-text-primary">
-              Total: {formatBRL(filtered.reduce((s, i) => s + i.outstanding_amount, 0))}
-            </span>
+
+            <div className="flex items-center gap-2">
+              {totalPages > 1 && (
+                <>
+                  <button
+                    onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+                    disabled={offset === 0}
+                    className="text-xs px-3 py-1 rounded border border-border bg-surface text-text-secondary hover:bg-card disabled:opacity-40"
+                  >
+                    Anterior
+                  </button>
+                  <span className="text-xs text-text-secondary">
+                    Pagina {currentPage} de {totalPages}
+                  </span>
+                  <button
+                    onClick={() =>
+                      setOffset(
+                        Math.min(
+                          (totalPages - 1) * PAGE_SIZE,
+                          offset + PAGE_SIZE
+                        )
+                      )
+                    }
+                    disabled={currentPage >= totalPages}
+                    className="text-xs px-3 py-1 rounded border border-border bg-surface text-text-secondary hover:bg-card disabled:opacity-40"
+                  >
+                    Proxima
+                  </button>
+                </>
+              )}
+
+              <span className="text-sm font-semibold text-text-primary ml-4">
+                Total pagina:{" "}
+                {formatBRL(filtered.reduce((s, t) => s + t.saldo, 0))}
+              </span>
+            </div>
           </div>
         </div>
       )}
@@ -497,7 +648,7 @@ export default function ContasReceber() {
       {loading && (
         <div className="flex items-center justify-center gap-2 text-text-secondary text-sm py-4">
           <Loader2 size={16} className="animate-spin" />
-          <span>Buscando faturas do ERPNext...</span>
+          <span>Buscando titulos do Nomus...</span>
         </div>
       )}
     </div>
