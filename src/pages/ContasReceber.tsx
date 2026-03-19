@@ -326,13 +326,13 @@ export default function ContasReceber() {
 
     if (empresa === "ARAMESUL") {
       totalAberto = resumo.cr_aberto_aramesul;
-      subtitleTotal = `${totalTitulos} titulos em aberto`;
+      subtitleTotal = `${totalTitulos} títulos em aberto`;
     } else if (empresa === "ARAMETRIX") {
       totalAberto = resumo.cr_aberto_arametrix;
-      subtitleTotal = `${totalTitulos} titulos em aberto`;
+      subtitleTotal = `${totalTitulos} títulos em aberto`;
     } else {
       totalAberto = resumo.cr_aberto_total;
-      subtitleTotal = `${totalTitulos} titulos em aberto`;
+      subtitleTotal = `${totalTitulos} títulos em aberto`;
     }
 
     const overdueItems = titulos.filter((t) => daysOverdue(t.vencimento) > 0);
@@ -351,14 +351,14 @@ export default function ContasReceber() {
       {
         label: "Vencidas",
         value: formatBRL(overdueTotal),
-        subtitle: `${overdueItems.length} titulos em atraso`,
+        subtitle: `${overdueItems.length} títulos em atraso`,
         icon: <AlertTriangle size={22} />,
         color: "#EF4444",
       },
       {
         label: "A Vencer",
         value: formatBRL(toExpireTotal),
-        subtitle: `${toExpireItems.length} titulos a vencer`,
+        subtitle: `${toExpireItems.length} títulos a vencer`,
         icon: <Clock size={22} />,
         color: "#10B981",
       },
@@ -409,7 +409,7 @@ export default function ContasReceber() {
             Contas a Receber
           </h1>
           <p className="text-sm text-text-secondary mt-1">
-            Titulos em aberto e aging analysis — Fonte: Nomus
+            Títulos em aberto e aging analysis — Fonte: Nomus
           </p>
         </div>
 
@@ -469,7 +469,7 @@ export default function ContasReceber() {
       {/* Aging Bar */}
       {!loading && titulos.length > 0 && <AgingBar titulos={titulos} />}
 
-      {/* Tabela de Titulos */}
+      {/* Tabela de Títulos */}
       {loading && titulos.length === 0 ? (
         <TableSkeleton />
       ) : (
@@ -477,7 +477,7 @@ export default function ContasReceber() {
           {/* Table header */}
           <div className="flex items-center justify-between p-4 border-b border-border">
             <h3 className="text-sm font-semibold text-text-primary">
-              Titulos em Aberto ({filtered.length}
+              Títulos em Aberto ({filtered.length}
               {totalTitulos > PAGE_SIZE
                 ? ` de ${totalTitulos}`
                 : ""}
@@ -521,7 +521,7 @@ export default function ContasReceber() {
                   </th>
                   <th className="text-left px-4 py-3 font-medium">CNPJ</th>
                   <th className="text-left px-4 py-3 font-medium">
-                    Descricao
+                    Descrição
                   </th>
                   <th
                     className="text-right px-4 py-3 font-medium cursor-pointer hover:text-text-primary"
@@ -590,7 +590,7 @@ export default function ContasReceber() {
                       colSpan={7}
                       className="px-4 py-8 text-center text-text-secondary text-sm"
                     >
-                      Nenhum titulo encontrado
+                      Nenhum título encontrado
                     </td>
                   </tr>
                 )}
@@ -601,7 +601,7 @@ export default function ContasReceber() {
           {/* Footer with pagination */}
           <div className="flex items-center justify-between p-4 border-t border-border bg-surface/50">
             <span className="text-xs text-text-secondary">
-              Mostrando {filtered.length} de {totalTitulos} titulos
+              Mostrando {filtered.length} de {totalTitulos} títulos
               {empresa !== "Todos" && ` (${empresa})`}
             </span>
 
@@ -616,7 +616,7 @@ export default function ContasReceber() {
                     Anterior
                   </button>
                   <span className="text-xs text-text-secondary">
-                    Pagina {currentPage} de {totalPages}
+                    Página {currentPage} de {totalPages}
                   </span>
                   <button
                     onClick={() =>
@@ -630,13 +630,13 @@ export default function ContasReceber() {
                     disabled={currentPage >= totalPages}
                     className="text-xs px-3 py-1 rounded border border-border bg-surface text-text-secondary hover:bg-card disabled:opacity-40"
                   >
-                    Proxima
+                    Próxima
                   </button>
                 </>
               )}
 
               <span className="text-sm font-semibold text-text-primary ml-4">
-                Total pagina:{" "}
+                Total página:{" "}
                 {formatBRL(filtered.reduce((s, t) => s + t.saldo, 0))}
               </span>
             </div>
@@ -648,7 +648,7 @@ export default function ContasReceber() {
       {loading && (
         <div className="flex items-center justify-center gap-2 text-text-secondary text-sm py-4">
           <Loader2 size={16} className="animate-spin" />
-          <span>Buscando titulos do Nomus...</span>
+          <span>Buscando títulos do Nomus...</span>
         </div>
       )}
     </div>
