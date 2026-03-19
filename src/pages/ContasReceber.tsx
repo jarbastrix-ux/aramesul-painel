@@ -218,7 +218,7 @@ function AgingBar({ titulos }: { titulos: Titulo[] }) {
   return (
     <div className="bg-card rounded-xl border border-border p-5 shadow-sm">
       <h3 className="text-sm font-semibold text-text-primary mb-4">
-        Aging Analysis
+        Análise de Vencimentos
       </h3>
 
       {/* Bar */}
@@ -409,7 +409,7 @@ export default function ContasReceber() {
             Contas a Receber
           </h1>
           <p className="text-sm text-text-secondary mt-1">
-            Títulos em aberto e aging analysis — Fonte: Nomus
+            Títulos em aberto e análise de vencimentos — Fonte: Nomus
           </p>
         </div>
 
