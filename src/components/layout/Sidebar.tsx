@@ -1,4 +1,4 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -11,7 +11,7 @@ import {
   TrendingUp,
   Map,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 interface NavItem {
   label: string;
@@ -69,6 +69,20 @@ const navItems: NavItem[] = [
 
 export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
+  const location = useLocation();
+  const isMapaActive = location.pathname === "/mapa";
+
+  // Ocultar sidebar automaticamente quando Mapa estiver ativo
+  useEffect(() => {
+    if (isMapaActive) {
+      setCollapsed(true);
+    }
+  }, [isMapaActive]);
+
+  // Quando Mapa está ativo, esconder completamente a sidebar
+  if (isMapaActive) {
+    return null;
+  }
 
   return (
     <aside

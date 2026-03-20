@@ -1,8 +1,15 @@
-import { Outlet } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import Header from "./Header";
 
 export default function Shell() {
+  const location = useLocation();
+  const isMapaActive = location.pathname === "/mapa";
+
+  if (isMapaActive) {
+    return <Outlet />;
+  }
+
   return (
     <div className="flex min-h-screen bg-surface">
       <Sidebar />
