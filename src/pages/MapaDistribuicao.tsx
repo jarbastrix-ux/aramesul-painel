@@ -1,23 +1,37 @@
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 
 export default function MapaDistribuicao() {
-  const iframeRef = useRef<HTMLIFrameElement>(null)
-
   useEffect(() => {
-    // Recarrega o iframe toda vez que a página é acessada
-    if (iframeRef.current) {
-      iframeRef.current.src = iframeRef.current.src
-    }
+    window.open('https://mistralsteel.com.br/mapa_distribuicao.html', '_blank')
   }, [])
 
   return (
-    <div style={{position:'fixed',top:0,left:0,width:'100vw',height:'100vh',zIndex:9999}}>
-      <iframe
-        ref={iframeRef}
-        src="https://mistralsteel.com.br/mapa_distribuicao.html"
-        style={{width:'100%',height:'100%',border:'none'}}
-        title="Mapa de Distribuição"
-      />
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      height: '80vh',
+      gap: '16px'
+    }}>
+      <p style={{color: 'var(--color-text-secondary)', fontSize: '14px'}}>
+        O mapa abre em nova aba automaticamente.
+      </p>
+      <a
+        href="https://mistralsteel.com.br/mapa_distribuicao.html"
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{
+          background: '#C85A1A',
+          color: 'white',
+          padding: '10px 20px',
+          borderRadius: '6px',
+          textDecoration: 'none',
+          fontSize: '14px'
+        }}
+      >
+        🗺️ Abrir Mapa de Distribuição
+      </a>
     </div>
   )
 }
