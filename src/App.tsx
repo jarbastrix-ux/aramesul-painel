@@ -10,6 +10,7 @@ import OEE from "./pages/OEE";
 import DashboardExecutivo from "./pages/DashboardExecutivo";
 import DRE from "./pages/DRE";
 import MapaDistribuicao from "./pages/MapaDistribuicao";
+import Inadimplencia from "./pages/Inadimplencia";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -46,6 +47,7 @@ export default function App() {
             <Route path="/oee" element={<OEE />} />
             <Route path="/dre" element={<DRE />} />
             <Route path="/mapa" element={<MapaDistribuicao />} />
+            <Route path="/inadimplencia" element={<Inadimplencia />} />
             <Route path="/relatorios" element={<Relatorios />} />
           </Route>
         </Routes>

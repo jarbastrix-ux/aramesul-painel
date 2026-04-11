@@ -10,6 +10,7 @@ import {
   Gauge,
   TrendingUp,
   Map,
+  AlertTriangle,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
@@ -54,6 +55,11 @@ const navItems: NavItem[] = [
     label: "DRE",
     path: "/dre",
     icon: <TrendingUp size={20} />,
+  },
+  {
+    label: "Inadimplência",
+    path: "/inadimplencia",
+    icon: <AlertTriangle size={20} />,
   },
   {
     label: "Mapa",
