@@ -10,6 +10,10 @@ import {
   Building2,
   Search,
   ArrowUpDown,
+  ShieldAlert,
+  TrendingUp,
+  FileWarning,
+  CheckCircle2,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -92,6 +96,12 @@ function formatBRL(value: number): string {
   }).format(value);
 }
 
+function formatBRLCompact(value: number): string {
+  if (value >= 1_000_000) return `R$ ${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `R$ ${(value / 1_000).toFixed(0)}k`;
+  return formatBRL(value);
+}
+
 function calcDiasAtraso(vencimento: string): number {
   const hoje = new Date();
   hoje.setHours(0, 0, 0, 0);
@@ -117,6 +127,98 @@ function getFaixaColor(dias: number): string {
 }
 
 // ---------------------------------------------------------------------------
+// Painel de Alertas Críticos
+// ---------------------------------------------------------------------------
+interface AlertaItem {
+  nivel: "CRITICO" | "ALTO" | "INFO";
+  mensagem: string;
+  icon: React.ReactNode;
+}
+
+function PainelAlertas({
+  titulos,
+  crTotal,
+  totalInadimplente,
+}: {
+  titulos: (Titulo & { dias_atraso: number })[];
+  crTotal: number;
+  totalInadimplente: number;
+}) {
+  const alertas: AlertaItem[] = [];
+  const taxa = crTotal > 0 ? (totalInadimplente / crTotal) * 100 : 0;
+
+  // Alerta taxa de inadimplência
+  if (taxa > 80) {
+    alertas.push({
+      nivel: "CRITICO",
+      mensagem: `Taxa de inadimplência CRÍTICA: ${taxa.toFixed(1)}% do CR total está vencido`,
+      icon: <ShieldAlert size={16} />,
+    });
+  } else if (taxa > 60) {
+    alertas.push({
+      nivel: "ALTO",
+      mensagem: `Taxa de inadimplência elevada: ${taxa.toFixed(1)}% do CR total está vencido`,
+      icon: <AlertTriangle size={16} />,
+    });
+  }
+
+  // Alerta títulos +180 dias
+  const mais180 = titulos.filter((t) => t.dias_atraso > 180);
+  const valor180 = mais180.reduce((s, t) => s + t.saldo, 0);
+  if (valor180 > 500_000) {
+    alertas.push({
+      nivel: "CRITICO",
+      mensagem: `${mais180.length} títulos com +180 dias de atraso — ${formatBRL(valor180)} em risco de perda`,
+      icon: <FileWarning size={16} />,
+    });
+  } else if (valor180 > 100_000) {
+    alertas.push({
+      nivel: "ALTO",
+      mensagem: `${mais180.length} títulos com +180 dias de atraso — ${formatBRL(valor180)}`,
+      icon: <Clock size={16} />,
+    });
+  }
+
+  // Alerta total inadimplente alto
+  if (totalInadimplente > 4_000_000) {
+    alertas.push({
+      nivel: "CRITICO",
+      mensagem: `Total inadimplente acima de R$ 4M — ação imediata recomendada`,
+      icon: <TrendingDown size={16} />,
+    });
+  }
+
+  if (alertas.length === 0) {
+    return (
+      <div className="flex items-center gap-3 p-4 rounded-xl bg-green-500/10 border border-green-500/30 text-green-400 text-sm">
+        <CheckCircle2 size={18} />
+        <span>Nenhum alerta crítico — inadimplência dentro dos parâmetros normais.</span>
+      </div>
+    );
+  }
+
+  const bgMap = { CRITICO: "bg-red-500/10 border-red-500/30 text-red-400", ALTO: "bg-orange-500/10 border-orange-500/30 text-orange-400", INFO: "bg-blue-500/10 border-blue-500/30 text-blue-400" };
+
+  return (
+    <div className="space-y-2">
+      <h2 className="text-sm font-semibold text-text-muted uppercase tracking-wide flex items-center gap-2">
+        <ShieldAlert size={14} className="text-red-400" />
+        Alertas Automáticos — {new Date().toLocaleDateString("pt-BR")}
+      </h2>
+      {alertas.map((a, i) => (
+        <div key={i} className={`flex items-start gap-3 p-3 rounded-xl border text-sm ${bgMap[a.nivel]}`}>
+          <span className="shrink-0 mt-0.5">{a.icon}</span>
+          <div>
+            <span className="font-semibold mr-2">[{a.nivel}]</span>
+            {a.mensagem}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Componente Principal
 // ---------------------------------------------------------------------------
 export default function Inadimplencia() {
@@ -138,28 +240,35 @@ export default function Inadimplencia() {
     setLoading(true);
     setError(null);
     try {
-      // Buscar todos os títulos vencidos (inadimplentes)
-      const params = new URLSearchParams({
-        limit: "500",
-        offset: "0",
-        ...(empresa !== "Todos" && { empresa }),
-      });
+      // Buscar todos os títulos (com paginação)
+      const allTitulos: Titulo[] = [];
+      let offset = 0;
+      const limit = 500;
+      let total = Infinity;
 
-      const [crResp, resumoResp] = await Promise.all([
-        fetch(`${API_BASE}/cr?${params}`),
-        fetch(`${API_BASE}/resumo`),
-      ]);
+      while (offset < total) {
+        const params = new URLSearchParams({
+          limit: String(limit),
+          offset: String(offset),
+          ...(empresa !== "Todos" && { empresa }),
+        });
+        const resp = await fetch(`${API_BASE}/cr?${params}`);
+        if (!resp.ok) throw new Error(`Erro CR: ${resp.status}`);
+        const data: CRResponse = await resp.json();
+        total = data.total;
+        allTitulos.push(...data.titulos);
+        offset += limit;
+        if (data.titulos.length === 0) break;
+      }
 
-      if (!crResp.ok) throw new Error(`Erro CR: ${crResp.status}`);
+      const resumoResp = await fetch(`${API_BASE}/resumo`);
       if (!resumoResp.ok) throw new Error(`Erro Resumo: ${resumoResp.status}`);
-
-      const crData: CRResponse = await crResp.json();
       const resumoData: ResumoResponse = await resumoResp.json();
 
       // Filtrar apenas inadimplentes (vencidos)
       const hoje = new Date();
       hoje.setHours(0, 0, 0, 0);
-      const inadimplentes = crData.titulos.filter((t) => {
+      const inadimplentes = allTitulos.filter((t) => {
         const venc = new Date(t.vencimento + "T00:00:00");
         return venc < hoje;
       });
@@ -227,6 +336,10 @@ export default function Inadimplencia() {
   const totalArametrix = titulos.filter((t) => t.empresa === "ARAMETRIX").reduce((s, t) => s + t.saldo, 0);
   const crTotal = resumo?.cr_aberto_total ?? 0;
   const taxaInadimplencia = crTotal > 0 ? (totalInadimplente / crTotal) * 100 : 0;
+  const titulosComDias = titulos.map((t) => ({ ...t, dias_atraso: calcDiasAtraso(t.vencimento) }));
+  const mediaDias = titulos.length > 0
+    ? titulosComDias.reduce((s, t) => s + t.dias_atraso, 0) / titulos.length
+    : 0;
 
   // ── Dados para gráficos ────────────────────────────────────────────────────
   const faixasData = FAIXAS_CONFIG.map((f) => {
@@ -284,7 +397,7 @@ export default function Inadimplencia() {
         <div className="flex items-center gap-3">
           {lastUpdate && (
             <span className="text-text-muted text-xs">
-              Atualizado: {lastUpdate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+              Atualizado: {lastUpdate.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
             </span>
           )}
           <button
@@ -306,14 +419,23 @@ export default function Inadimplencia() {
         </div>
       )}
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Painel de Alertas Automáticos */}
+      {!loading && (
+        <PainelAlertas
+          titulos={titulosComDias}
+          crTotal={crTotal}
+          totalInadimplente={totalInadimplente}
+        />
+      )}
+
+      {/* KPI Cards — 5 cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <div className="bg-surface border border-border rounded-xl p-4">
           <div className="flex items-center gap-2 text-text-muted text-xs uppercase tracking-wide mb-2">
             <DollarSign size={14} className="text-red-400" />
             Total Inadimplente
           </div>
-          <div className="text-2xl font-bold text-red-400">{formatBRL(totalInadimplente)}</div>
+          <div className="text-2xl font-bold text-red-400">{formatBRLCompact(totalInadimplente)}</div>
           <div className="text-text-muted text-xs mt-1">{titulos.length} títulos vencidos</div>
         </div>
 
@@ -322,8 +444,19 @@ export default function Inadimplencia() {
             <TrendingDown size={14} className="text-orange-400" />
             Taxa de Inadimplência
           </div>
-          <div className="text-2xl font-bold text-orange-400">{taxaInadimplencia.toFixed(1)}%</div>
+          <div className={`text-2xl font-bold ${taxaInadimplencia > 80 ? "text-red-500" : taxaInadimplencia > 60 ? "text-orange-400" : "text-yellow-400"}`}>
+            {taxaInadimplencia.toFixed(1)}%
+          </div>
           <div className="text-text-muted text-xs mt-1">sobre CR total aberto</div>
+        </div>
+
+        <div className="bg-surface border border-border rounded-xl p-4">
+          <div className="flex items-center gap-2 text-text-muted text-xs uppercase tracking-wide mb-2">
+            <Clock size={14} className="text-yellow-400" />
+            Média de Atraso
+          </div>
+          <div className="text-2xl font-bold text-yellow-400">{mediaDias.toFixed(0)} dias</div>
+          <div className="text-text-muted text-xs mt-1">por título inadimplente</div>
         </div>
 
         <div className="bg-surface border border-border rounded-xl p-4">
@@ -331,7 +464,7 @@ export default function Inadimplencia() {
             <Building2 size={14} className="text-blue-400" />
             Aramesul
           </div>
-          <div className="text-2xl font-bold text-blue-400">{formatBRL(totalAramesul)}</div>
+          <div className="text-2xl font-bold text-blue-400">{formatBRLCompact(totalAramesul)}</div>
           <div className="text-text-muted text-xs mt-1">
             {titulos.filter((t) => t.empresa === "ARAMESUL").length} títulos
           </div>
@@ -342,7 +475,7 @@ export default function Inadimplencia() {
             <Building2 size={14} className="text-purple-400" />
             Arametrix
           </div>
-          <div className="text-2xl font-bold text-purple-400">{formatBRL(totalArametrix)}</div>
+          <div className="text-2xl font-bold text-purple-400">{formatBRLCompact(totalArametrix)}</div>
           <div className="text-text-muted text-xs mt-1">
             {titulos.filter((t) => t.empresa === "ARAMETRIX").length} títulos
           </div>
@@ -370,7 +503,10 @@ export default function Inadimplencia() {
               <Tooltip
                 contentStyle={{ background: "#1a1d27", border: "1px solid #2e3347", borderRadius: 8 }}
                 labelStyle={{ color: "#e2e8f0" }}
-                formatter={(value) => [formatBRL(Number(value ?? 0)), "Valor"]}
+                formatter={(value, _name, props) => [
+                  `${formatBRL(Number(value ?? 0))} (${props.payload?.qtd ?? 0} títulos)`,
+                  "Valor",
+                ]}
               />
               <Bar dataKey="valor" radius={[4, 4, 0, 0]}>
                 {faixasData.map((entry, index) => (
@@ -397,6 +533,8 @@ export default function Inadimplencia() {
                 outerRadius={90}
                 paddingAngle={3}
                 dataKey="value"
+                label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(1)}%`}
+                labelLine={false}
               >
                 {empresaData.map((_, index) => (
                   <Cell key={index} fill={PIE_COLORS[index % PIE_COLORS.length]} />
@@ -510,6 +648,11 @@ export default function Inadimplencia() {
                         {t.cnpj && (
                           <div className="text-text-muted text-xs mt-0.5">{t.cnpj}</div>
                         )}
+                        {t.descricao && (
+                          <div className="text-text-muted text-xs mt-0.5 truncate max-w-[250px]" title={t.descricao}>
+                            {t.descricao}
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <span
@@ -568,6 +711,13 @@ export default function Inadimplencia() {
             </div>
           </div>
         )}
+      </div>
+
+      {/* Rodapé com info de atualização */}
+      <div className="text-center text-text-muted text-xs py-2">
+        <TrendingUp size={12} className="inline mr-1" />
+        Dados atualizados automaticamente a cada 5 minutos via API financeiro.mistralsteel.com.br
+        {lastUpdate && ` — Última atualização: ${lastUpdate.toLocaleString("pt-BR")}`}
       </div>
     </div>
   );
