@@ -501,18 +501,66 @@ export default function DashboardExecutivo() {
 
       setWorkOrders(wos);
 
-      // ---- Alertas ----
+      // ---- Alertas (dados reais de inadimplência via API) ----
       const newAlertas: Alerta[] = [];
 
-      const crTitulos = financeiroRes?.cr_titulos ?? 0;
-      const crVencidas = crTitulos > 100 ? Math.round(crTitulos * 0.1) : 0;
+      // Buscar dados reais de inadimplência para alertas precisos
+      let inadimplTotal = 0;
+      let inadimpl180dias = 0;
+      let qtd180dias = 0;
+      try {
+        const crResp = await fetch(`${FINANCEIRO_API}/cr?limit=2000&offset=0`);
+        if (crResp.ok) {
+          const crData = await crResp.json();
+          const hoje = new Date();
+          hoje.setHours(0, 0, 0, 0);
+          const vencidos = (crData.titulos ?? []).filter((t: { vencimento: string }) => {
+            const venc = new Date(t.vencimento + "T00:00:00");
+            return venc < hoje;
+          });
+          inadimplTotal = vencidos.reduce((s: number, t: { saldo: number }) => s + t.saldo, 0);
+          const mais180 = vencidos.filter((t: { vencimento: string }) => {
+            const venc = new Date(t.vencimento + "T00:00:00");
+            const dias = Math.floor((hoje.getTime() - venc.getTime()) / (1000 * 60 * 60 * 24));
+            return dias > 180;
+          });
+          inadimpl180dias = mais180.reduce((s: number, t: { saldo: number }) => s + t.saldo, 0);
+          qtd180dias = mais180.length;
+        }
+      } catch { /* silencioso */ }
 
-      if (crVencidas > 0) {
+      const crTotal = financeiroRes?.cr_aberto_total ?? 0;
+      const taxaInadimpl = crTotal > 0 ? (inadimplTotal / crTotal) * 100 : 0;
+
+      if (inadimplTotal > 4_000_000) {
         newAlertas.push({
           tipo: "danger",
-          titulo: `${crVencidas} título${crVencidas > 1 ? "s" : ""} a receber vencido${crVencidas > 1 ? "s" : ""} há mais de 90 dias`,
-          descricao: "Ação urgente necessária para cobrança",
+          titulo: `Inadimplência CRÍTICA: R$ ${(inadimplTotal / 1_000_000).toFixed(2)}M — ${taxaInadimpl.toFixed(1)}% do CR total`,
+          descricao: "Total de títulos vencidos acima de R$ 4M — ação imediata recomendada",
           icon: <FileWarning size={18} />,
+        });
+      } else if (inadimplTotal > 2_000_000) {
+        newAlertas.push({
+          tipo: "danger",
+          titulo: `Inadimplência elevada: R$ ${(inadimplTotal / 1_000_000).toFixed(2)}M — ${taxaInadimpl.toFixed(1)}% do CR total`,
+          descricao: "Total de títulos vencidos acima de R$ 2M",
+          icon: <FileWarning size={18} />,
+        });
+      }
+
+      if (inadimpl180dias > 500_000) {
+        newAlertas.push({
+          tipo: "danger",
+          titulo: `${qtd180dias} títulos com +180 dias de atraso — R$ ${(inadimpl180dias / 1_000).toFixed(0)}k em risco de perda`,
+          descricao: "Títulos com alto risco de irrecuperabilidade — considerar provisão para devedores duvidosos",
+          icon: <AlertTriangle size={18} />,
+        });
+      } else if (inadimpl180dias > 100_000) {
+        newAlertas.push({
+          tipo: "warning",
+          titulo: `${qtd180dias} títulos com +180 dias de atraso — R$ ${(inadimpl180dias / 1_000).toFixed(0)}k`,
+          descricao: "Ação urgente necessária para cobrança",
+          icon: <AlertTriangle size={18} />,
         });
       }
 
