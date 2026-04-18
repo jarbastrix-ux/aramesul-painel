@@ -19,7 +19,7 @@ async function conn() {
     user: process.env.DO_MYSQL_USER,
     password: process.env.DO_MYSQL_PASSWORD,
     database: process.env.DO_MYSQL_DATABASE || 'comercial_aramesul',
-    connectTimeout: 10000,
+    connectTimeout: 10000, ssl: {rejectUnauthorized: true},
   })
 }
 
