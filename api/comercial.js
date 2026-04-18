@@ -12,15 +12,37 @@ const cors = {
   'Access-Control-Allow-Headers': 'Content-Type',
 }
 
+/**
+ * Extrai credenciais da URL do banco via regex para evitar problemas
+ * de URL-encoding no parser nativo do mysql2.
+ * Formato esperado: mysql://USER:PASSWORD@HOST:PORT/DATABASE
+ */
+function parseDbUrl(url) {
+  const m = (url || '').match(
+    /^mysql:\/\/([^:]+):(.+)@([^:]+):(\d+)\/([^?]+)/
+  )
+  if (!m) throw new Error('URL_DO_BANCO_DE_DADOS invalida ou ausente')
+  return {
+    user:     m[1],
+    password: m[2],
+    host:     m[3],
+    port:     parseInt(m[4], 10),
+    database: m[5],
+  }
+}
+
 export default async function handler(req, res) {
   Object.entries(cors).forEach(([k, v]) => res.setHeader(k, v))
   if (req.method === 'OPTIONS') return res.status(200).end()
 
   const { tipo } = req.query
 
-  // Remove query string da URL para evitar conflito com opção ssl
-  const dbUrl = (process.env.URL_DO_BANCO_DE_DADOS || '').split('?')[0]
-  const db = await mysql.createConnection({ uri: dbUrl, ssl: { rejectUnauthorized: false } })
+  const creds = parseDbUrl(process.env.URL_DO_BANCO_DE_DADOS)
+  const db = await mysql.createConnection({
+    ...creds,
+    ssl: { rejectUnauthorized: false },
+  })
+
   try {
     if (tipo === 'jornadas') {
       await db.execute(`CREATE TABLE IF NOT EXISTS jornadas_comercial (
@@ -83,7 +105,7 @@ export default async function handler(req, res) {
       return res.json({ ok: true, dados: rows })
     }
 
-    return res.status(400).json({ error: 'tipo inválido' })
+    return res.status(400).json({ error: 'tipo invalido' })
   } catch (err) {
     console.error('[Comercial]', err.message)
     return res.status(500).json({ error: 'Erro interno', detalhe: err.message })
