@@ -1,14 +1,15 @@
 import mysql from 'mysql2/promise';
 
-const db = await mysql.createConnection(process.env.URL_DO_BANCO_DE_DADOS);
-
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
+  let db;
   try {
+    db = await mysql.createConnection(process.env.URL_DO_BANCO_DE_DADOS);
+
     if (req.method === 'GET') {
       const tipo = req.query.tipo;
       if (tipo === 'vendedores') {
@@ -52,5 +53,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ erro: 'metodo nao permitido' });
   } catch (e) {
     return res.status(500).json({ erro: e.message });
+  } finally {
+    if (db) await db.end();
   }
 }
