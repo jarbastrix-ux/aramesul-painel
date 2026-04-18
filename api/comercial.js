@@ -12,28 +12,14 @@ const cors = {
   'Access-Control-Allow-Headers': 'Content-Type',
 }
 
-async function conn() {
-  // Parse URL_DO_BANCO_DE_DADOS: mysql://user:password@host:port/database
-  const url = new URL(process.env.URL_DO_BANCO_DE_DADOS)
-
-  return mysql.createConnection({
-    host: url.hostname,
-    port: parseInt(url.port || '3306'),
-    user: url.username,
-    password: url.password,
-    database: url.pathname.slice(1), // Remove leading '/'
-    connectTimeout: 10000,
-    ssl: { rejectUnauthorized: false },
-  })
-}
-
 export default async function handler(req, res) {
   Object.entries(cors).forEach(([k, v]) => res.setHeader(k, v))
   if (req.method === 'OPTIONS') return res.status(200).end()
 
   const { tipo } = req.query
 
-  const db = await conn()
+  // Mesmo padrão do aramesul-motorista-pwa: passa a URL diretamente ao mysql2
+  const db = await mysql.createConnection(process.env.URL_DO_BANCO_DE_DADOS)
   try {
     if (tipo === 'jornadas') {
       await db.execute(`CREATE TABLE IF NOT EXISTS jornadas_comercial (
