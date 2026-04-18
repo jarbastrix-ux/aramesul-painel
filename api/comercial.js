@@ -18,8 +18,9 @@ export default async function handler(req, res) {
 
   const { tipo } = req.query
 
-  // Mesmo padrão do aramesul-motorista-pwa: passa a URL diretamente ao mysql2
-  const db = await mysql.createConnection(process.env.URL_DO_BANCO_DE_DADOS)
+  // Remove query string da URL para evitar conflito com opção ssl
+  const dbUrl = (process.env.URL_DO_BANCO_DE_DADOS || '').split('?')[0]
+  const db = await mysql.createConnection({ uri: dbUrl, ssl: { rejectUnauthorized: false } })
   try {
     if (tipo === 'jornadas') {
       await db.execute(`CREATE TABLE IF NOT EXISTS jornadas_comercial (
