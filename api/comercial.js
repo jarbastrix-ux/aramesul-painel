@@ -1,5 +1,5 @@
 /**
- * /api/relatorios-comercial.js
+ * /api/comercial.js
  * GET ?tipo=jornadas  → lista jornadas
  * GET ?tipo=visitas   → lista visitas
  * GET ?tipo=despesas  → lista despesas
@@ -23,7 +23,7 @@ async function conn() {
     password: url.password,
     database: url.pathname.slice(1), // Remove leading '/'
     connectTimeout: 10000,
-    ssl: 'amazon', // TiDB Cloud requer SSL
+    ssl: { rejectUnauthorized: false },
   })
 }
 
@@ -35,8 +35,6 @@ export default async function handler(req, res) {
 
   const db = await conn()
   try {
-    // handler continuo
-
     if (tipo === 'jornadas') {
       await db.execute(`CREATE TABLE IF NOT EXISTS jornadas_comercial (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -100,7 +98,7 @@ export default async function handler(req, res) {
 
     return res.status(400).json({ error: 'tipo inválido' })
   } catch (err) {
-    console.error('[Relatórios Comercial]', err.message)
+    console.error('[Comercial]', err.message)
     return res.status(500).json({ error: 'Erro interno', detalhe: err.message })
   } finally {
     await db.end()
