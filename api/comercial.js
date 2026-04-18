@@ -1,6 +1,103 @@
-import mysql from 'mysql2/promise';
-const cors={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET, POST, DELETE, OPTIONS','Access-Control-Allow-Headers':'Content-Type'};
-async function conn(){const raw=process.env.URL_DO_BANCO_DE_DADOS||'';const m=raw.match(/mysql:\/\/([^:]+):(.+)@([^:@]+):(\d+)\/([^?]+)/);if(!m)throw new Error('DB URL invalida: '+raw.slice(0,30));return mysql.createConnection({host:m[3],port:parseInt(m[4]),user:decodeURIComponent(m[1]),password:decodeURIComponent(m[2]),database:m[5],ssl:{rejectUnauthorized:true},connectTimeout:10000});}
-async function criarTabelas(db){await db.execute('CREATE TABLE IF NOT EXISTS vendedores_comercial (id INT AUTO_INCREMENT PRIMARY KEY, codigo VARCHAR(20) NOT NULL UNIQUE, nome VARCHAR(120) NOT NULL, email VARCHAR(120), telefone VARCHAR(20), ativo TINYINT DEFAULT 1, criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4');await db.execute('CREATE TABLE IF NOT EXISTS veiculos_comercial (id INT AUTO_INCREMENT PRIMARY KEY, placa VARCHAR(10) NOT NULL UNIQUE, modelo VARCHAR(80) NOT NULL, marca VARCHAR(60) NOT NULL, ano INT, ativo TINYINT DEFAULT 1, criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4');}
-export default async function handler(req,res){Object.entries(cors).forEach(([k,v])=>res.setHeader(k,v));if(req.method==='OPTIONS')return res.status(200).end();
-  if(req.query.debug){return res.json({url_prefix:(process.env.URL_DO_BANCO_DE_DADOS||'VAZIO').slice(0,40)});}let db;try{db=await conn();await criarTabelas(db);if(req.method==='GET'){const{tipo}=req.query;if(tipo==='vendedores'){const[rows]=await db.execute('SELECT * FROM vendedores_comercial WHERE ativo=1 ORDER BY nome');return res.json({dados:rows});}if(tipo==='veiculos'){const[rows]=await db.execute('SELECT * FROM veiculos_comercial WHERE ativo=1 ORDER BY placa');return res.json({dados:rows});}return res.status(400).json({erro:'tipo invalido'});}if(req.method==='POST'){const{tipo,nome,email,telefone,placa,marca,modelo,ano}=req.body;if(tipo==='vendedor'){const codigo='V'+Date.now().toString().slice(-6);await db.execute('INSERT INTO vendedores_comercial (codigo,nome,email,telefone) VALUES (?,?,?,?)',[codigo,nome,email||null,telefone||null]);return res.json({ok:true,codigo});}if(tipo==='veiculo'){await db.execute('INSERT IGNORE INTO veiculos_comercial (placa,modelo,marca,ano) VALUES (?,?,?,?)',[placa,modelo,marca,ano||null]);return res.json({ok:true});}return res.status(400).json({erro:'tipo invalido'});}if(req.method==='DELETE'){const{id,tipo}=req.body;if(tipo==='vendedor')await db.execute('UPDATE vendedores_comercial SET ativo=0 WHERE id=?',[id]);if(tipo==='veiculo')await db.execute('UPDATE veiculos_comercial SET ativo=0 WHERE id=?',[id]);return res.json({ok:true});}return res.status(405).json({erro:'metodo nao permitido'});}catch(e){return res.status(500).json({erro:e.message});}finally{if(db)await db.end();}}
+/**
+ * /api/relatorios-comercial.js
+ * GET ?tipo=jornadas  → lista jornadas
+ * GET ?tipo=visitas   → lista visitas
+ * GET ?tipo=despesas  → lista despesas
+ */
+import mysql from 'mysql2/promise'
+
+const cors = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+}
+
+async function conn() {
+  return mysql.createConnection({
+    host: process.env.DO_MYSQL_HOST,
+    port: parseInt(process.env.DO_MYSQL_PORT || '3306'),
+    user: process.env.DO_MYSQL_USER,
+    password: process.env.DO_MYSQL_PASSWORD,
+    database: process.env.DO_MYSQL_DATABASE || 'comercial_aramesul',
+    connectTimeout: 10000,
+  })
+}
+
+export default async function handler(req, res) {
+  Object.entries(cors).forEach(([k, v]) => res.setHeader(k, v))
+  if (req.method === 'OPTIONS') return res.status(200).end()
+  
+
+  const db = await conn()
+  try {
+    // handler continuo
+
+    if (tipo === 'jornadas') {
+      await db.execute(`CREATE TABLE IF NOT EXISTS jornadas_comercial (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        vendedor_codigo VARCHAR(20) NOT NULL,
+        vendedor_nome VARCHAR(120) NOT NULL,
+        veiculo_placa VARCHAR(10) NOT NULL,
+        km_inicial INT NOT NULL,
+        km_final INT,
+        km_rodados INT,
+        foto_hodometro_inicial LONGTEXT,
+        foto_hodometro_final LONGTEXT,
+        status ENUM('ativa','finalizada') DEFAULT 'ativa',
+        iniciada_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        finalizada_em TIMESTAMP NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
+
+      const [rows] = await db.execute(
+        'SELECT id, vendedor_codigo, vendedor_nome, veiculo_placa, km_inicial, km_final, km_rodados, status, iniciada_em, finalizada_em FROM jornadas_comercial ORDER BY iniciada_em DESC LIMIT 100'
+      )
+      return res.json({ ok: true, dados: rows })
+    }
+
+    if (tipo === 'visitas') {
+      await db.execute(`CREATE TABLE IF NOT EXISTS visitas_comercial (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        jornada_id INT,
+        vendedor_codigo VARCHAR(20) NOT NULL,
+        vendedor_nome VARCHAR(120),
+        cnpj VARCHAR(14) NOT NULL,
+        nome_fantasia VARCHAR(200) NOT NULL,
+        observacao TEXT,
+        latitude DECIMAL(10,7),
+        longitude DECIMAL(10,7),
+        visitada_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
+
+      const [rows] = await db.execute(
+        'SELECT id, vendedor_codigo, vendedor_nome, cnpj, nome_fantasia, latitude, longitude, visitada_em FROM visitas_comercial ORDER BY visitada_em DESC LIMIT 100'
+      )
+      return res.json({ ok: true, dados: rows })
+    }
+
+    if (tipo === 'despesas') {
+      await db.execute(`CREATE TABLE IF NOT EXISTS despesas_comercial (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        jornada_id INT,
+        vendedor_codigo VARCHAR(20) NOT NULL,
+        tipo VARCHAR(50) NOT NULL,
+        valor DECIMAL(10,2) NOT NULL,
+        descricao VARCHAR(255),
+        foto_recibo LONGTEXT,
+        nfce_url TEXT,
+        registrada_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
+
+      const [rows] = await db.execute(
+        'SELECT id, vendedor_codigo, tipo, valor, descricao, registrada_em FROM despesas_comercial ORDER BY registrada_em DESC LIMIT 100'
+      )
+      return res.json({ ok: true, dados: rows })
+    }
+
+    return res.status(400).json({ error: 'tipo inválido' })
+  } catch (err) {
+    console.error('[Relatórios Comercial]', err.message)
+    return res.status(500).json({ error: 'Erro interno', detalhe: err.message })
+  } finally {
+    await db.end()
+  }
+}
