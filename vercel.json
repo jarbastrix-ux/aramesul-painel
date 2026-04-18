@@ -1,7 +1,1 @@
-{
-  "rewrites": [
-    { "source": "/api/erp1/:path*", "destination": "/api/erp1/[...path]" },
-    { "source": "/api/erp2/:path*", "destination": "/api/erp2/[...path]" },
-    { "source": "/:path((?!api).*)", "destination": "/index.html" }
-  ]
-}
+{"installCommand":"npm install","buildCommand":"npm run build"}
