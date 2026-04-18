@@ -8,7 +8,15 @@ export default async function handler(req, res) {
 
   let db;
   try {
-    db = await mysql.createConnection(process.env.URL_DO_BANCO_DE_DADOS);
+    const url = new URL(process.env.URL_DO_BANCO_DE_DADOS);
+    db = await mysql.createConnection({
+      host: url.hostname,
+      port: parseInt(url.port) || 4000,
+      user: url.username,
+      password: url.password,
+      database: url.pathname.slice(1),
+      ssl: { rejectUnauthorized: true }
+    });
 
     if (req.method === 'GET') {
       const tipo = req.query.tipo;
@@ -27,17 +35,11 @@ export default async function handler(req, res) {
       const { tipo, nome, email, telefone, placa, marca, modelo, ano } = req.body;
       if (tipo === 'vendedor') {
         const codigo = 'V' + Date.now().toString().slice(-6);
-        await db.execute(
-          'INSERT INTO vendedores_comercial (codigo, nome, email, telefone) VALUES (?,?,?,?)',
-          [codigo, nome, email || null, telefone || null]
-        );
+        await db.execute('INSERT INTO vendedores_comercial (codigo, nome, email, telefone) VALUES (?,?,?,?)', [codigo, nome, email||null, telefone||null]);
         return res.json({ ok: true, codigo });
       }
       if (tipo === 'veiculo') {
-        await db.execute(
-          'INSERT IGNORE INTO veiculos_comercial (placa, modelo, marca, ano) VALUES (?,?,?,?)',
-          [placa, modelo, marca, ano || null]
-        );
+        await db.execute('INSERT IGNORE INTO veiculos_comercial (placa, modelo, marca, ano) VALUES (?,?,?,?)', [placa, modelo, marca, ano||null]);
         return res.json({ ok: true });
       }
       return res.status(400).json({ erro: 'tipo invalido' });
