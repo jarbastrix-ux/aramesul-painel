@@ -11,6 +11,7 @@ import DashboardExecutivo from "./pages/DashboardExecutivo";
 import DRE from "./pages/DRE";
 import MapaDistribuicao from "./pages/MapaDistribuicao";
 import Inadimplencia from "./pages/Inadimplencia";
+import ComercialAdmin from "./pages/ComercialAdmin";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -21,10 +22,6 @@ const queryClient = new QueryClient({
   },
 });
 
-/**
- * Redireciona gestao.mistralsteel.com.br para /executivo como página inicial.
- * Para outros domínios, mantém o Dashboard padrão.
- */
 function HomeRedirect() {
   const isGestao = window.location.hostname === "gestao.mistralsteel.com.br";
   if (isGestao) {
@@ -49,6 +46,7 @@ export default function App() {
             <Route path="/mapa" element={<MapaDistribuicao />} />
             <Route path="/inadimplencia" element={<Inadimplencia />} />
             <Route path="/relatorios" element={<Relatorios />} />
+            <Route path="/comercial-admin" element={<ComercialAdmin />} />
           </Route>
         </Routes>
       </BrowserRouter>
