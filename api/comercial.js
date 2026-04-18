@@ -1,25 +1,54 @@
 import mysql from 'mysql2/promise';
 
+const cors = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+};
+
+async function conn() {
+  return mysql.createConnection({
+    host: process.env.DO_MYSQL_HOST,
+    port: parseInt(process.env.DO_MYSQL_PORT || '3306'),
+    user: process.env.DO_MYSQL_USER,
+    password: process.env.DO_MYSQL_PASSWORD,
+    database: process.env.DO_MYSQL_DATABASE || 'comercial_aramesul',
+    connectTimeout: 10000,
+  });
+}
+
+async function criarTabelas(db) {
+  await db.execute(CREATE TABLE IF NOT EXISTS vendedores_comercial (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    codigo VARCHAR(20) NOT NULL UNIQUE,
+    nome VARCHAR(120) NOT NULL,
+    email VARCHAR(120),
+    telefone VARCHAR(20),
+    ativo TINYINT DEFAULT 1,
+    criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4);
+
+  await db.execute(CREATE TABLE IF NOT EXISTS veiculos_comercial (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    placa VARCHAR(10) NOT NULL UNIQUE,
+    modelo VARCHAR(80) NOT NULL,
+    marca VARCHAR(60) NOT NULL,
+    ano INT,
+    ativo TINYINT DEFAULT 1,
+    criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4);
+}
+
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  Object.entries(cors).forEach(([k, v]) => res.setHeader(k, v));
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  let db;
+  const db = await conn();
   try {
-    const url = new URL(process.env.URL_DO_BANCO_DE_DADOS);
-    db = await mysql.createConnection({
-      host: url.hostname,
-      port: parseInt(url.port) || 4000,
-      user: url.username,
-      password: url.password,
-      database: url.pathname.slice(1),
-      ssl: { rejectUnauthorized: true }
-    });
+    await criarTabelas(db);
 
     if (req.method === 'GET') {
-      const tipo = req.query.tipo;
+      const { tipo } = req.query;
       if (tipo === 'vendedores') {
         const [rows] = await db.execute('SELECT * FROM vendedores_comercial WHERE ativo=1 ORDER BY nome');
         return res.json({ dados: rows });
@@ -56,6 +85,6 @@ export default async function handler(req, res) {
   } catch (e) {
     return res.status(500).json({ erro: e.message });
   } finally {
-    if (db) await db.end();
+    await db.end();
   }
 }
