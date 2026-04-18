@@ -7,12 +7,16 @@ const cors = {
 };
 
 async function conn() {
+  const raw = process.env.URL_DO_BANCO_DE_DADOS || '';
+  const clean = raw.split('?')[0];
+  const url = new URL(clean);
   return mysql.createConnection({
-    host: process.env.DO_MYSQL_HOST,
-    port: parseInt(process.env.DO_MYSQL_PORT || '3306'),
-    user: process.env.DO_MYSQL_USER,
-    password: process.env.DO_MYSQL_PASSWORD,
-    database: process.env.DO_MYSQL_DATABASE || 'comercial_aramesul',
+    host: url.hostname,
+    port: parseInt(url.port) || 4000,
+    user: decodeURIComponent(url.username),
+    password: decodeURIComponent(url.password),
+    database: url.pathname.slice(1),
+    ssl: { rejectUnauthorized: true },
     connectTimeout: 10000,
   });
 }
@@ -27,7 +31,6 @@ async function criarTabelas(db) {
     ativo TINYINT DEFAULT 1,
     criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4);
-
   await db.execute(CREATE TABLE IF NOT EXISTS veiculos_comercial (
     id INT AUTO_INCREMENT PRIMARY KEY,
     placa VARCHAR(10) NOT NULL UNIQUE,
@@ -42,9 +45,9 @@ async function criarTabelas(db) {
 export default async function handler(req, res) {
   Object.entries(cors).forEach(([k, v]) => res.setHeader(k, v));
   if (req.method === 'OPTIONS') return res.status(200).end();
-
-  const db = await conn();
+  let db;
   try {
+    db = await conn();
     await criarTabelas(db);
 
     if (req.method === 'GET') {
@@ -85,6 +88,6 @@ export default async function handler(req, res) {
   } catch (e) {
     return res.status(500).json({ erro: e.message });
   } finally {
-    await db.end();
+    if (db) await db.end();
   }
 }
