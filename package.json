@@ -12,7 +12,7 @@
   "dependencies": {
     "@tailwindcss/vite": "^4.2.2",
     "@tanstack/react-query": "^5.99.0",
-    "@tidbcloud/serverless": "^0.3.1",
+    "@tidbcloud/serverless": "^0.3.0",
     "@types/qrcode": "^1.5.6",
     "lucide-react": "^0.577.0",
     "qrcode": "^1.5.4",
