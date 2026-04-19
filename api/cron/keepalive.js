@@ -1,0 +1,108 @@
+/**
+ * /api/cron/keepalive.js
+ *
+ * Vercel Cron Job — executa diariamente para:
+ * 1. Manter o cluster TiDB Cloud Serverless ativo (evita pausa por inatividade)
+ * 2. Verificar os endpoints críticos do painel
+ * 3. Enviar alerta Telegram se algum endpoint retornar 5xx
+ *
+ * Cron schedule: 0 8 * * * (todo dia às 08:00 UTC)
+ */
+
+import { connect } from '@tidbcloud/serverless';
+
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+const BASE_URL = process.env.VERCEL_URL
+  ? `https://${process.env.VERCEL_URL}`
+  : 'https://gestao.mistralsteel.com.br';
+
+async function sendTelegram(msg) {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
+  try {
+    await fetch(
+      `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: TELEGRAM_CHAT_ID,
+          text: msg,
+          parse_mode: 'HTML',
+        }),
+      }
+    );
+  } catch (_) {}
+}
+
+async function tidbKeepAlive() {
+  const conn = connect({ url: process.env.URL_DO_BANCO_DE_DADOS });
+  const result = await conn.execute('SELECT 1 AS ok');
+  return result[0]?.ok === 1;
+}
+
+async function checkEndpoint(url) {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    return res.status;
+  } catch (e) {
+    return 0;
+  }
+}
+
+export default async function handler(req, res) {
+  // Vercel Cron Jobs enviam o header Authorization com CRON_SECRET
+  const authHeader = req.headers['authorization'];
+  if (
+    process.env.CRON_SECRET &&
+    authHeader !== `Bearer ${process.env.CRON_SECRET}`
+  ) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const results = {};
+  const errors = [];
+
+  // 1. Keep-alive TiDB
+  try {
+    const ok = await tidbKeepAlive();
+    results.tidb_keepalive = ok ? 'OK' : 'FALHOU';
+    if (!ok) errors.push('TiDB SELECT 1 retornou resultado inesperado');
+  } catch (e) {
+    results.tidb_keepalive = 'ERRO';
+    errors.push(`TiDB keep-alive falhou: ${e.message}`);
+  }
+
+  // 2. Verificar endpoints críticos
+  const endpoints = [
+    { name: 'relatorios/jornadas', path: '/api/relatorios-comercial?tipo=jornadas' },
+    { name: 'relatorios/despesas', path: '/api/relatorios-comercial?tipo=despesas' },
+    { name: 'relatorios/visitas',  path: '/api/relatorios-comercial?tipo=visitas' },
+    { name: 'comercial/vendedores', path: '/api/comercial?tipo=vendedores' },
+  ];
+
+  for (const ep of endpoints) {
+    const status = await checkEndpoint(`${BASE_URL}${ep.path}`);
+    results[ep.name] = status;
+    if (status >= 500 || status === 0) {
+      errors.push(`${ep.name} retornou ${status}`);
+    }
+  }
+
+  // 3. Enviar alerta se houver erros
+  if (errors.length > 0) {
+    const msg =
+      `⚠️ <b>Alerta gestao.mistralsteel.com.br</b>\n\n` +
+      `Problemas detectados pelo healthcheck diário:\n` +
+      errors.map((e) => `• ${e}`).join('\n') +
+      `\n\n<i>${new Date().toISOString()}</i>`;
+    await sendTelegram(msg);
+  }
+
+  return res.status(200).json({
+    ok: errors.length === 0,
+    timestamp: new Date().toISOString(),
+    results,
+    errors,
+  });
+}
