@@ -13,9 +13,9 @@ import { connect } from '@tidbcloud/serverless';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-
-// URL de produção hardcoded — o VERCEL_URL aponta para o preview, não para o domínio customizado
-const PROD_URL = 'https://gestao.mistralsteel.com.br';
+const BASE_URL = process.env.VERCEL_URL
+  ? `https://${process.env.VERCEL_URL}`
+  : 'https://gestao.mistralsteel.com.br';
 
 async function sendTelegram(msg) {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
@@ -37,10 +37,8 @@ async function sendTelegram(msg) {
 
 async function tidbKeepAlive() {
   const conn = connect({ url: process.env.URL_DO_BANCO_DE_DADOS });
-  // @tidbcloud/serverless retorna array de rows
-  const rows = await conn.execute('SELECT 1 AS ok');
-  // rows é um array; rows[0] é o primeiro row como objeto
-  return Array.isArray(rows) && rows.length > 0;
+  const result = await conn.execute('SELECT 1 AS ok');
+  return result[0]?.ok === 1;
 }
 
 async function checkEndpoint(url) {
@@ -65,7 +63,7 @@ export default async function handler(req, res) {
   const results = {};
   const errors = [];
 
-  // 1. Keep-alive TiDB — apenas executa SELECT 1 para manter o cluster ativo
+  // 1. Keep-alive TiDB
   try {
     const ok = await tidbKeepAlive();
     results.tidb_keepalive = ok ? 'OK' : 'FALHOU';
@@ -75,7 +73,7 @@ export default async function handler(req, res) {
     errors.push(`TiDB keep-alive falhou: ${e.message}`);
   }
 
-  // 2. Verificar endpoints críticos (apenas 5xx são alertados — 401/403 são ignorados)
+  // 2. Verificar endpoints críticos
   const endpoints = [
     { name: 'relatorios/jornadas', path: '/api/relatorios-comercial?tipo=jornadas' },
     { name: 'relatorios/despesas', path: '/api/relatorios-comercial?tipo=despesas' },
@@ -84,15 +82,14 @@ export default async function handler(req, res) {
   ];
 
   for (const ep of endpoints) {
-    const status = await checkEndpoint(`${PROD_URL}${ep.path}`);
+    const status = await checkEndpoint(`${BASE_URL}${ep.path}`);
     results[ep.name] = status;
-    // Alerta apenas para 5xx ou timeout (0) — 401/403 são esperados sem autenticação
     if (status >= 500 || status === 0) {
-      errors.push(`${ep.name} retornou ${status === 0 ? 'TIMEOUT' : status}`);
+      errors.push(`${ep.name} retornou ${status}`);
     }
   }
 
-  // 3. Enviar alerta Telegram se houver erros críticos
+  // 3. Enviar alerta se houver erros
   if (errors.length > 0) {
     const msg =
       `⚠️ <b>Alerta gestao.mistralsteel.com.br</b>\n\n` +
