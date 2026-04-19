@@ -3,7 +3,7 @@
  *
  * GET  ?tipo=veiculos   → lista os 8 veículos da frota comercial (hardcoded)
  * GET  ?tipo=vendedores → lista vendedores do banco TiDB
- * POST ?tipo=vendedores → cadastra vendedor { nome, email?, telefone? }
+ * POST ?tipo=vendedores → cadastra vendedor { nome_completo|nome, email?, telefone? }
  * DELETE ?tipo=vendedores&id=X → remove vendedor por id
  *
  * Usa @tidbcloud/serverless (HTTP-based, sem problemas de SSL/TCP).
@@ -63,8 +63,12 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'POST' && tipo === 'vendedores') {
-      const { nome, email = null, telefone = null } = req.body ?? {}
-      if (!nome) return res.status(400).json({ error: 'nome e obrigatorio' })
+      const body = req.body ?? {}
+      // aceita nome_completo (frontend) ou nome (retrocompatível)
+      const nome = body.nome_completo ?? body.nome ?? null
+      const email = body.email ?? null
+      const telefone = body.telefone ?? null
+      if (!nome) return res.status(400).json({ error: 'nome (ou nome_completo) e obrigatorio' })
       const db = await getDb()
       const result = await db.execute(
         'INSERT INTO vendedores_comercial (nome, email, telefone) VALUES (?, ?, ?)',
