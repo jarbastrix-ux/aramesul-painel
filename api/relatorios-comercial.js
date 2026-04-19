@@ -4,7 +4,7 @@
  * GET ?tipo=visitas   → lista visitas
  * GET ?tipo=despesas  → lista despesas
  */
-import mysql from 'mysql2/promise'
+import { connect } from '@tidbcloud/serverless'
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -12,15 +12,8 @@ const cors = {
   'Access-Control-Allow-Headers': 'Content-Type',
 }
 
-async function conn() {
-  return mysql.createConnection({
-    host: process.env.DO_MYSQL_HOST,
-    port: parseInt(process.env.DO_MYSQL_PORT || '3306'),
-    user: process.env.DO_MYSQL_USER,
-    password: process.env.DO_MYSQL_PASSWORD,
-    database: process.env.DO_MYSQL_DATABASE || 'comercial_aramesul',
-    connectTimeout: 10000,
-  })
+function getDb() {
+  return connect({ url: process.env.URL_DO_BANCO_DE_DADOS })
 }
 
 export default async function handler(req, res) {
@@ -28,7 +21,7 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'GET') return res.status(405).json({ error: 'Método não permitido' })
 
-  const db = await conn()
+  const db = getDb()
   try {
     const { tipo } = req.query
 
@@ -48,10 +41,10 @@ export default async function handler(req, res) {
         finalizada_em TIMESTAMP NULL
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
 
-      const [rows] = await db.execute(
+      const r1 = await db.execute(
         'SELECT id, vendedor_codigo, vendedor_nome, veiculo_placa, km_inicial, km_final, km_rodados, status, iniciada_em, finalizada_em FROM jornadas_comercial ORDER BY iniciada_em DESC LIMIT 100'
       )
-      return res.json({ ok: true, dados: rows })
+      return res.json({ ok: true, dados: r1.rows })
     }
 
     if (tipo === 'visitas') {
@@ -68,10 +61,10 @@ export default async function handler(req, res) {
         visitada_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
 
-      const [rows] = await db.execute(
+      const r2 = await db.execute(
         'SELECT id, vendedor_codigo, vendedor_nome, cnpj, nome_fantasia, latitude, longitude, visitada_em FROM visitas_comercial ORDER BY visitada_em DESC LIMIT 100'
       )
-      return res.json({ ok: true, dados: rows })
+      return res.json({ ok: true, dados: r2.rows })
     }
 
     if (tipo === 'despesas') {
@@ -87,17 +80,15 @@ export default async function handler(req, res) {
         registrada_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
 
-      const [rows] = await db.execute(
+      const r3 = await db.execute(
         'SELECT id, vendedor_codigo, tipo, valor, descricao, registrada_em FROM despesas_comercial ORDER BY registrada_em DESC LIMIT 100'
       )
-      return res.json({ ok: true, dados: rows })
+      return res.json({ ok: true, dados: r3.rows })
     }
 
     return res.status(400).json({ error: 'tipo inválido' })
   } catch (err) {
     console.error('[Relatórios Comercial]', err.message)
     return res.status(500).json({ error: 'Erro interno', detalhe: err.message })
-  } finally {
-    await db.end()
   }
 }
