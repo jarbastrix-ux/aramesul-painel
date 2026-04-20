@@ -3,7 +3,7 @@
  *
  * GET  ?tipo=veiculos   → lista os 8 veículos da frota comercial (hardcoded)
  * GET  ?tipo=vendedores → lista vendedores do banco TiDB (WHERE ativo = 1)
- * POST ?tipo=vendedores → cadastra vendedor { nome_completo|nome, email?, telefone? }
+ * POST ?tipo=vendedores OU body:{tipo:"vendedor",...} → cadastra vendedor { nome_completo|nome, email?, telefone? }
  * DELETE body:{id,tipo} → desativa vendedor (soft delete: ativo=0)
  *
  * Usa @tidbcloud/serverless (HTTP-based, sem problemas de SSL/TCP).
@@ -92,8 +92,13 @@ export default async function handler(req, res) {
     }
 
     // ── POST ─────────────────────────────────────────────────────────────────
-    if (req.method === 'POST' && tipo === 'vendedores') {
+    if (req.method === 'POST') {
       const body = await parseBody(req)
+      // aceita tipo da query string (?tipo=vendedores) OU do body JSON ({tipo:"vendedor"})
+      const postTipo = tipo ?? body.tipo ?? null
+      if (postTipo !== 'vendedor' && postTipo !== 'vendedores') {
+        return res.status(400).json({ error: 'tipo invalido para POST. Use: vendedor | vendedores' })
+      }
       // aceita nome_completo (frontend) ou nome (retrocompatível)
       const nome = body.nome_completo ?? body.nome ?? null
       const email = body.email ?? null
@@ -143,4 +148,5 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: err.message })
   }
 }
+
 
