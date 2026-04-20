@@ -109,9 +109,17 @@ export default async function handler(req, res) {
 
     // ── DELETE ───────────────────────────────────────────────────────────────
     if (req.method === 'DELETE') {
-      // id e tipo chegam via query string (Vercel não parseia body em DELETE)
-      const deleteId = req.query.id ?? null
-      const deleteTipo = req.query.tipo ?? null
+      // Aceita id e tipo tanto da query string quanto do body JSON.
+      // Vercel+Vite não popula req.body em DELETE, mas clientes REST padrão
+      // (mobile app, scripts externos) podem mandar no body.
+      let bodyParsed = {}
+      if (req.body && typeof req.body === 'object') {
+        bodyParsed = req.body
+      } else if (typeof req.body === 'string' && req.body.length > 0) {
+        try { bodyParsed = JSON.parse(req.body) } catch { bodyParsed = {} }
+      }
+      const deleteId = req.query.id ?? bodyParsed.id ?? null
+      const deleteTipo = req.query.tipo ?? bodyParsed.tipo ?? null
       // aceita 'vendedor' (frontend) ou 'vendedores' (retrocompatível)
       if (deleteTipo !== 'vendedor' && deleteTipo !== 'vendedores') {
         return res.status(400).json({ error: 'tipo invalido para DELETE. Use: vendedor | vendedores' })
@@ -135,3 +143,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: err.message })
   }
 }
+
