@@ -1,6 +1,9 @@
 {
   "installCommand": "npm install",
   "buildCommand": "npm run build",
+  "github": {
+    "productionBranch": "master"
+  },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
