@@ -4,7 +4,7 @@
  * GET  ?tipo=veiculos   → lista os 8 veículos da frota comercial (hardcoded)
  * GET  ?tipo=vendedores → lista vendedores do banco TiDB
  * POST ?tipo=vendedores → cadastra vendedor { nome_completo|nome, email?, telefone? }
- * DELETE ?tipo=vendedores&id=X → remove vendedor por id
+ * DELETE body:{id,tipo} → desativa vendedor (soft delete: ativo=0)
  *
  * Usa @tidbcloud/serverless (HTTP-based, sem problemas de SSL/TCP).
  */
@@ -55,7 +55,7 @@ export default async function handler(req, res) {
       if (tipo === 'vendedores') {
         const db = await getDb()
         const rows = await db.execute(
-          'SELECT id, nome, email, telefone, criado_em FROM vendedores_comercial ORDER BY nome'
+          'SELECT id, nome, email, telefone, criado_em FROM vendedores_comercial WHERE ativo = 1 ORDER BY nome'
         )
         return res.json({ ok: true, dados: rows.rows ?? rows })
       }
@@ -77,10 +77,24 @@ export default async function handler(req, res) {
       return res.json({ ok: true, id: result.lastInsertId })
     }
 
-    if (req.method === 'DELETE' && tipo === 'vendedores') {
-      if (!id) return res.status(400).json({ error: 'id e obrigatorio' })
+    if (req.method === 'DELETE') {
+      const body = req.body ?? {}
+      const deleteId = body.id ?? null
+      const deleteTipo = body.tipo ?? null
+      // aceita 'vendedor' (frontend) ou 'vendedores' (retrocompatível)
+      if (deleteTipo !== 'vendedor' && deleteTipo !== 'vendedores') {
+        return res.status(400).json({ error: 'tipo invalido para DELETE. Use: vendedor | vendedores' })
+      }
+      if (!deleteId) return res.status(400).json({ error: 'id e obrigatorio' })
       const db = await getDb()
-      await db.execute('DELETE FROM vendedores_comercial WHERE id = ?', [id])
+      const result = await db.execute(
+        'UPDATE vendedores_comercial SET ativo = 0, updated_at = NOW() WHERE id = ? AND ativo = 1',
+        [deleteId]
+      )
+      const affected = result.rowsAffected ?? result.affectedRows ?? 0
+      if (affected === 0) {
+        return res.status(404).json({ ok: false, error: 'vendedor nao encontrado ou ja desativado' })
+      }
       return res.json({ ok: true })
     }
 
