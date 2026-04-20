@@ -454,7 +454,7 @@ export default function ComercialAdmin() {
                           <p style={styles.listSec}>Código: <span style={{ fontFamily: "monospace", color: "#3b82f6" }}>{v.codigo}</span>{v.email && ` · ${v.email}`}</p>
                         </div>
                         <div style={{ display: "flex", gap: 8 }}>
-                          <button style={styles.btnQR} onClick={() => setQrModal({ nome: v.nome, codigo: v.id, tipo: "vendedor" })}>
+                          <button style={styles.btnQR} onClick={() => setQrModal({ nome: v.nome, codigo: String(v.id), tipo: "vendedor" })}>
                             📱 QR Code
                           </button>
                           <button style={styles.btnDelete} onClick={() => desativar(v.id, "vendedor")}>🗑️</button>
