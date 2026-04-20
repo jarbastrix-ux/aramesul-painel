@@ -253,10 +253,8 @@ export default function ComercialAdmin() {
 
   async function desativar(id: number, tipo: "vendedor" | "veiculo") {
     if (!confirm("Desativar este cadastro?")) return;
-    await fetch("/api/comercial", {
+    await fetch(`/api/comercial?id=${id}&tipo=${tipo}`, {
       method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, tipo }),
     });
     carregar();
   }
