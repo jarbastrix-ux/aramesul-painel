@@ -72,7 +72,7 @@ function QRModal({ nome, codigo, tipo, onClose }: {
 }) {
   const [qrUrl, setQrUrl] = useState("");
   useEffect(() => {
-    const content = tipo === "vendedor" ? `VENDEDOR:${codigo}` : `VEICULO:${codigo}`;
+    const content = tipo === "vendedor" ? `VENDEDOR-${codigo}` : `VEICULO-${codigo}`;
     QRCode.toDataURL(content, { width: 280, margin: 2, color: { dark: "#000", light: "#fff" } })
       .then(setQrUrl);
   }, [codigo, tipo]);
