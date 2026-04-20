@@ -451,7 +451,7 @@ export default function ComercialAdmin() {
                         <div style={styles.avatarCircle}>{v.nome[0]}</div>
                         <div style={{ flex: 1 }}>
                           <p style={styles.listPrimary}>{v.nome}</p>
-                          <p style={styles.listSec}>Código: <span style={{ fontFamily: "monospace", color: "#3b82f6" }}>{v.codigo}</span>{v.email && ` · ${v.email}`}</p>
+                          <p style={styles.listSec}>Código: <span style={{ fontFamily: "monospace", color: "#3b82f6" }}>{String(v.id)}</span>{v.email && ` · ${v.email}`}</p>
                         </div>
                         <div style={{ display: "flex", gap: 8 }}>
                           <button style={styles.btnQR} onClick={() => setQrModal({ nome: v.nome, codigo: String(v.id), tipo: "vendedor" })}>
