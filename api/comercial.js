@@ -2,11 +2,15 @@
  * /api/comercial.js
  *
  * GET  ?tipo=veiculos   → lista os 8 veículos da frota comercial (hardcoded)
- * GET  ?tipo=vendedores → lista vendedores do banco TiDB
+ * GET  ?tipo=vendedores → lista vendedores do banco TiDB (WHERE ativo = 1)
  * POST ?tipo=vendedores → cadastra vendedor { nome_completo|nome, email?, telefone? }
- * DELETE ?tipo=vendedores&id=X → remove vendedor por id
+ * DELETE body:{id,tipo} → desativa vendedor (soft delete: ativo=0)
  *
  * Usa @tidbcloud/serverless (HTTP-based, sem problemas de SSL/TCP).
+ *
+ * NOTA: Em funções Vercel serverless (Vite, não Next.js), req.body só é
+ * populado automaticamente para POST. Para DELETE, o body chega como stream
+ * bruto. O helper parseBody() lê o stream e parseia o JSON manualmente.
  */
 import { connect } from '@tidbcloud/serverless'
 
@@ -27,6 +31,30 @@ const VEICULOS = [
   { placa: 'BBG8869', marca: 'Chevrolet',  modelo: 'Montana Ls1',          ano: 2017 },
 ]
 
+/**
+ * Lê o body da requisição como stream e parseia como JSON.
+ * Necessário para métodos DELETE em funções Vercel serverless (não-Next.js),
+ * onde req.body não é populado automaticamente.
+ * Retorna {} se o body estiver vazio ou não for JSON válido.
+ */
+function parseBody(req) {
+  // Se o Vercel já populou req.body (ex: POST), usa diretamente
+  if (req.body !== undefined && req.body !== null) {
+    if (typeof req.body === 'object') return Promise.resolve(req.body)
+    try { return Promise.resolve(JSON.parse(req.body)) } catch { return Promise.resolve({}) }
+  }
+  // Caso contrário, lê o stream manualmente
+  return new Promise((resolve) => {
+    let raw = ''
+    req.on('data', (chunk) => { raw += chunk.toString() })
+    req.on('end', () => {
+      if (!raw) return resolve({})
+      try { resolve(JSON.parse(raw)) } catch { resolve({}) }
+    })
+    req.on('error', () => resolve({}))
+  })
+}
+
 async function getDb() {
   const db = connect({ url: process.env.URL_DO_BANCO_DE_DADOS })
   await db.execute(`
@@ -45,9 +73,10 @@ export default async function handler(req, res) {
   Object.entries(cors).forEach(([k, v]) => res.setHeader(k, v))
   if (req.method === 'OPTIONS') return res.status(200).end()
 
-  const { tipo, id } = req.query
+  const { tipo } = req.query
 
   try {
+    // ── GET ──────────────────────────────────────────────────────────────────
     if (req.method === 'GET') {
       if (tipo === 'veiculos') {
         return res.json({ ok: true, dados: VEICULOS })
@@ -55,15 +84,16 @@ export default async function handler(req, res) {
       if (tipo === 'vendedores') {
         const db = await getDb()
         const rows = await db.execute(
-          'SELECT id, nome, email, telefone, criado_em FROM vendedores_comercial ORDER BY nome'
+          'SELECT id, nome, email, telefone, criado_em FROM vendedores_comercial WHERE ativo = 1 ORDER BY nome'
         )
         return res.json({ ok: true, dados: rows.rows ?? rows })
       }
       return res.status(400).json({ error: 'tipo invalido. Use: veiculos | vendedores' })
     }
 
+    // ── POST ─────────────────────────────────────────────────────────────────
     if (req.method === 'POST' && tipo === 'vendedores') {
-      const body = req.body ?? {}
+      const body = await parseBody(req)
       // aceita nome_completo (frontend) ou nome (retrocompatível)
       const nome = body.nome_completo ?? body.nome ?? null
       const email = body.email ?? null
@@ -77,10 +107,26 @@ export default async function handler(req, res) {
       return res.json({ ok: true, id: result.lastInsertId })
     }
 
-    if (req.method === 'DELETE' && tipo === 'vendedores') {
-      if (!id) return res.status(400).json({ error: 'id e obrigatorio' })
+    // ── DELETE ───────────────────────────────────────────────────────────────
+    if (req.method === 'DELETE') {
+      // Lê body via stream (req.body não é populado automaticamente para DELETE)
+      const body = await parseBody(req)
+      const deleteId = body.id ?? null
+      const deleteTipo = body.tipo ?? null
+      // aceita 'vendedor' (frontend) ou 'vendedores' (retrocompatível)
+      if (deleteTipo !== 'vendedor' && deleteTipo !== 'vendedores') {
+        return res.status(400).json({ error: 'tipo invalido para DELETE. Use: vendedor | vendedores' })
+      }
+      if (!deleteId) return res.status(400).json({ error: 'id e obrigatorio' })
       const db = await getDb()
-      await db.execute('DELETE FROM vendedores_comercial WHERE id = ?', [id])
+      const result = await db.execute(
+        'UPDATE vendedores_comercial SET ativo = 0, updated_at = NOW() WHERE id = ? AND ativo = 1',
+        [deleteId]
+      )
+      const affected = result.rowsAffected ?? result.affectedRows ?? 0
+      if (affected === 0) {
+        return res.status(404).json({ ok: false, error: 'vendedor nao encontrado ou ja desativado' })
+      }
       return res.json({ ok: true })
     }
 
