@@ -109,10 +109,9 @@ export default async function handler(req, res) {
 
     // ── DELETE ───────────────────────────────────────────────────────────────
     if (req.method === 'DELETE') {
-      // Lê body via stream (req.body não é populado automaticamente para DELETE)
-      const body = await parseBody(req)
-      const deleteId = body.id ?? null
-      const deleteTipo = body.tipo ?? null
+      // id e tipo chegam via query string (Vercel não parseia body em DELETE)
+      const deleteId = req.query.id ?? null
+      const deleteTipo = req.query.tipo ?? null
       // aceita 'vendedor' (frontend) ou 'vendedores' (retrocompatível)
       if (deleteTipo !== 'vendedor' && deleteTipo !== 'vendedores') {
         return res.status(400).json({ error: 'tipo invalido para DELETE. Use: vendedor | vendedores' })
